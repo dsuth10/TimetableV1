@@ -1,0 +1,1504 @@
+# Teacher Aide Scheduler - Technical Specification
+
+## Technical Stack
+- **Backend**: Flask (Python 3.9+)
+- **Frontend**: React 18+ with TypeScript
+- **Database**: SQLite (development) / PostgreSQL (production)
+- **State Management**: Zustand
+- **UI Components**: Material-UI v5
+- **Drag & Drop**: react-dnd
+- **Date Handling**: dateutil
+
+## Core Features
+1. Task Management (one-off and recurring)
+2. Drag-and-drop scheduling interface
+3. Conflict detection and resolution
+4. Absence management
+5. Status tracking
+6. Teacher request system
+
+## Database Schema
+
+### TeacherAide
+```sql
+CREATE TABLE teacher_aide (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    qualifications TEXT,
+    colour_hex VARCHAR(7) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Task
+```sql
+CREATE TABLE task (
+    id INTEGER PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    category ENUM('PLAYGROUND', 'CLASS_SUPPORT', 'GROUP_SUPPORT', 'INDIVIDUAL_SUPPORT') NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    recurrence_rule VARCHAR(200),
+    expires_on DATE,
+    classroom_id INTEGER REFERENCES classroom(id),
+    notes TEXT,
+    status ENUM('UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETE') NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CHECK (start_time < end_time),
+    CHECK (start_time >= '08:00' AND end_time <= '16:00')
+);
+```
+
+### Assignment
+```sql
+CREATE TABLE assignment (
+    id INTEGER PRIMARY KEY,
+    task_id INTEGER NOT NULL REFERENCES task(id),
+    aide_id INTEGER REFERENCES teacher_aide(id),
+    date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    status ENUM('UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETE') NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(aide_id, date, start_time, end_time)
+);
+```
+
+### Absence
+```sql
+CREATE TABLE absence (
+    id INTEGER PRIMARY KEY,
+    aide_id INTEGER NOT NULL REFERENCES teacher_aide(id),
+    date DATE NOT NULL,
+    reason VARCHAR(200),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(aide_id, date)
+);
+```
+
+## API Endpoints
+
+### Tasks
+```typescript
+// GET /api/tasks
+interface TaskListResponse {
+    tasks: Array<{
+        id: number;
+        title: string;
+        category: 'PLAYGROUND' | 'CLASS_SUPPORT' | 'GROUP_SUPPORT' | 'INDIVIDUAL_SUPPORT';
+        start_time: string; // HH:mm format
+        end_time: string;
+        recurrence_rule?: string;
+        expires_on?: string;
+        classroom_id?: number;
+        notes?: string;
+        status: 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETE';
+    }>;
+}
+
+// POST /api/tasks
+interface CreateTaskRequest {
+    title: string;
+    category: 'PLAYGROUND' | 'CLASS_SUPPORT' | 'GROUP_SUPPORT' | 'INDIVIDUAL_SUPPORT';
+    start_time: string;
+    end_time: string;
+    recurrence_rule?: string;
+    expires_on?: string;
+    classroom_id?: number;
+    notes?: string;
+}
+```
+
+### Assignments
+```typescript
+// GET /api/assignments?week=YYYY-WW
+interface AssignmentMatrixResponse {
+    assignments: Array<{
+        id: number;
+        task_id: number;
+        aide_id?: number;
+        date: string;
+        start_time: string;
+        end_time: string;
+        status: 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETE';
+    }>;
+}
+
+// POST /api/assignments/check
+interface ConflictCheckRequest {
+    aide_id: number;
+    date: string;
+    start_time: string;
+    end_time: string;
+}
+
+interface ConflictCheckResponse {
+    has_conflict: boolean;
+    conflicting_assignment?: {
+        id: number;
+        task_title: string;
+        start_time: string;
+        end_time: string;
+    };
+}
+```
+
+## API Documentation
+
+### Authentication
+All API endpoints require a valid JWT token in the Authorization header:
+```
+Authorization: Bearer <token>
+```
+
+### Error Responses
+All endpoints follow this error response format:
+```typescript
+interface ErrorResponse {
+    error: {
+        code: string;
+        message: string;
+        details?: Record<string, unknown>;
+    };
+    status: number;
+}
+```
+
+Common error codes:
+- `400` - Bad Request (invalid input)
+- `401` - Unauthorized (missing/invalid token)
+- `403` - Forbidden (insufficient permissions)
+- `404` - Not Found
+- `409` - Conflict (e.g., double booking)
+- `422` - Unprocessable Entity (validation error)
+- `500` - Internal Server Error
+
+### Tasks API
+
+#### GET /api/tasks
+List all tasks with optional filtering.
+
+Query Parameters:
+```typescript
+interface TaskListQuery {
+    status?: 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETE';
+    category?: 'PLAYGROUND' | 'CLASS_SUPPORT' | 'GROUP_SUPPORT' | 'INDIVIDUAL_SUPPORT';
+    start_date?: string; // YYYY-MM-DD
+    end_date?: string;   // YYYY-MM-DD
+    classroom_id?: number;
+}
+```
+
+Response:
+```typescript
+interface TaskListResponse {
+    tasks: Array<{
+        id: number;
+        title: string;
+        category: 'PLAYGROUND' | 'CLASS_SUPPORT' | 'GROUP_SUPPORT' | 'INDIVIDUAL_SUPPORT';
+        start_time: string; // HH:mm format
+        end_time: string;
+        recurrence_rule?: string;
+        expires_on?: string;
+        classroom_id?: number;
+        notes?: string;
+        status: 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETE';
+        created_at: string; // ISO 8601
+        updated_at: string; // ISO 8601
+    }>;
+    pagination: {
+        total: number;
+        page: number;
+        per_page: number;
+        total_pages: number;
+    };
+}
+```
+
+Example:
+```bash
+GET /api/tasks?status=UNASSIGNED&category=PLAYGROUND&start_date=2024-03-01
+```
+
+#### POST /api/tasks
+Create a new task.
+
+Request:
+```typescript
+interface CreateTaskRequest {
+    title: string;
+    category: 'PLAYGROUND' | 'CLASS_SUPPORT' | 'GROUP_SUPPORT' | 'INDIVIDUAL_SUPPORT';
+    start_time: string; // HH:mm format
+    end_time: string;
+    recurrence_rule?: string; // iCal RRULE format
+    expires_on?: string;      // YYYY-MM-DD
+    classroom_id?: number;
+    notes?: string;
+}
+```
+
+Response:
+```typescript
+interface CreateTaskResponse {
+    task: {
+        id: number;
+        // ... same as TaskListResponse task object
+    };
+    assignments: Array<{
+        id: number;
+        date: string;
+        start_time: string;
+        end_time: string;
+        status: 'UNASSIGNED';
+    }>;
+}
+```
+
+Example:
+```bash
+POST /api/tasks
+{
+    "title": "Playground Duty - Year 3 Oval",
+    "category": "PLAYGROUND",
+    "start_time": "10:30",
+    "end_time": "11:00",
+    "recurrence_rule": "FREQ=WEEKLY;BYDAY=MO,WE,FR",
+    "expires_on": "2024-06-30",
+    "notes": "Supervise Year 3 students during morning recess"
+}
+```
+
+### Assignments API
+
+#### GET /api/assignments
+Get assignments for a specific week.
+
+Query Parameters:
+```typescript
+interface AssignmentListQuery {
+    week: string;      // YYYY-WW format
+    aide_id?: number;
+    status?: 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETE';
+}
+```
+
+Response:
+```typescript
+interface AssignmentListResponse {
+    assignments: Array<{
+        id: number;
+        task_id: number;
+        task: {
+            title: string;
+            category: string;
+            notes?: string;
+        };
+        aide_id?: number;
+        aide?: {
+            name: string;
+            colour_hex: string;
+        };
+        date: string;      // YYYY-MM-DD
+        start_time: string; // HH:mm
+        end_time: string;   // HH:mm
+        status: 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETE';
+    }>;
+    week_start: string; // YYYY-MM-DD
+    week_end: string;   // YYYY-MM-DD
+}
+```
+
+#### POST /api/assignments/check
+Check for scheduling conflicts.
+
+Request:
+```typescript
+interface ConflictCheckRequest {
+    aide_id: number;
+    date: string;      // YYYY-MM-DD
+    start_time: string; // HH:mm
+    end_time: string;   // HH:mm
+    exclude_assignment_id?: number; // For updates
+}
+```
+
+Response:
+```typescript
+interface ConflictCheckResponse {
+    has_conflict: boolean;
+    conflicting_assignment?: {
+        id: number;
+        task_title: string;
+        start_time: string;
+        end_time: string;
+        status: string;
+    };
+}
+```
+
+#### POST /api/assignments/batch
+Create multiple assignments (e.g., for recurring tasks).
+
+Request:
+```typescript
+interface BatchAssignmentRequest {
+    task_id: number;
+    aide_id: number;
+    dates: string[]; // YYYY-MM-DD[]
+    start_time: string; // HH:mm
+    end_time: string;   // HH:mm
+}
+```
+
+Response:
+```typescript
+interface BatchAssignmentResponse {
+    assignments: Array<{
+        id: number;
+        date: string;
+        status: 'ASSIGNED';
+    }>;
+    conflicts: Array<{
+        date: string;
+        reason: string;
+    }>;
+}
+```
+
+### Absences API
+
+#### POST /api/absences
+Mark an aide as absent.
+
+Request:
+```typescript
+interface CreateAbsenceRequest {
+    aide_id: number;
+    date: string;      // YYYY-MM-DD
+    reason?: string;
+}
+```
+
+Response:
+```typescript
+interface CreateAbsenceResponse {
+    absence: {
+        id: number;
+        aide_id: number;
+        date: string;
+        reason?: string;
+        created_at: string;
+    };
+    released_assignments: Array<{
+        id: number;
+        task_title: string;
+        start_time: string;
+        end_time: string;
+    }>;
+}
+```
+
+#### DELETE /api/absences/{id}
+Remove an absence record.
+
+Response:
+```typescript
+interface DeleteAbsenceResponse {
+    restored_assignments: Array<{
+        id: number;
+        task_title: string;
+        start_time: string;
+        end_time: string;
+    }>;
+    failed_restores: Array<{
+        task_title: string;
+        reason: string;
+    }>;
+}
+```
+
+### Webhooks
+
+The system can notify external systems of important events via webhooks.
+
+#### Webhook Events
+```typescript
+type WebhookEvent = 
+    | 'assignment.created'
+    | 'assignment.updated'
+    | 'assignment.deleted'
+    | 'absence.created'
+    | 'absence.deleted'
+    | 'task.created'
+    | 'task.updated'
+    | 'task.deleted';
+```
+
+#### Webhook Payload
+```typescript
+interface WebhookPayload {
+    event: WebhookEvent;
+    timestamp: string; // ISO 8601
+    data: Record<string, unknown>;
+    signature: string; // HMAC-SHA256
+}
+```
+
+To verify webhook signatures:
+```python
+import hmac
+import hashlib
+
+def verify_webhook_signature(payload: bytes, signature: str, secret: str) -> bool:
+    expected = hmac.new(
+        secret.encode(),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
+```
+
+## Frontend Components
+
+### Core Components
+
+#### SchedulePage
+```typescript
+// SchedulePage.tsx
+import { useScheduleStore } from '../stores/scheduleStore';
+import { UnassignedTaskList } from './UnassignedTaskList';
+import { AideTimetable } from './AideTimetable';
+import { WeekSelector } from './WeekSelector';
+
+interface SchedulePageProps {
+    week: string; // YYYY-WW format
+}
+
+export const SchedulePage: React.FC<SchedulePageProps> = ({ week }) => {
+    const { aides, assignments, isLoading } = useScheduleStore(week);
+
+    if (isLoading) {
+        return <LoadingSpinner />;
+    }
+
+    return (
+        <div className="schedule-page">
+            <header className="schedule-header">
+                <h1>Teacher Aide Schedule</h1>
+                <WeekSelector currentWeek={week} />
+            </header>
+            
+            <div className="schedule-content">
+                <UnassignedTaskList week={week} />
+                <div className="timetables">
+                    {aides.map(aide => (
+                        <AideTimetable
+                            key={aide.id}
+                            aide={aide}
+                            assignments={assignments[aide.id] || []}
+                            week={week}
+                        />
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+```
+
+#### TimetableGrid
+```typescript
+// TimetableGrid.tsx
+import { useDrag, useDrop } from 'react-dnd';
+import { TimeSlot } from '../types';
+import { TaskCard } from './TaskCard';
+
+interface TimetableGridProps {
+    aideId: number;
+    week: string;
+    assignments: Assignment[];
+    onDrop: (assignmentId: number, slot: TimeSlot) => void;
+}
+
+export const TimetableGrid: React.FC<TimetableGridProps> = ({
+    aideId,
+    week,
+    assignments,
+    onDrop
+}) => {
+    const timeSlots = generateTimeSlots('08:00', '16:00', 30);
+    const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+    return (
+        <div className="timetable-grid">
+            <div className="time-column">
+                {timeSlots.map(slot => (
+                    <div key={slot} className="time-slot-label">
+                        {formatTime(slot)}
+                    </div>
+                ))}
+            </div>
+            
+            {weekDays.map(day => (
+                <div key={day} className="day-column">
+                    <div className="day-header">{day}</div>
+                    {timeSlots.map(timeSlot => {
+                        const assignment = findAssignment(assignments, day, timeSlot);
+                        return (
+                            <TimetableSlot
+                                key={`${day}-${timeSlot}`}
+                                day={day}
+                                timeSlot={timeSlot}
+                                assignment={assignment}
+                                onDrop={onDrop}
+                            />
+                        );
+                    })}
+                </div>
+            ))}
+        </div>
+    );
+};
+```
+
+#### TaskCard
+```typescript
+// TaskCard.tsx
+import { useDrag } from 'react-dnd';
+import { Task } from '../types';
+import { TaskDetailsModal } from './TaskDetailsModal';
+
+interface TaskCardProps {
+    task: Task;
+    isDragging: boolean;
+    onDragStart: () => void;
+    onDragEnd: () => void;
+}
+
+export const TaskCard: React.FC<TaskCardProps> = ({
+    task,
+    isDragging,
+    onDragStart,
+    onDragEnd
+}) => {
+    const [showDetails, setShowDetails] = useState(false);
+    const [{ isDragging: dragState }, drag] = useDrag({
+        type: 'TASK',
+        item: { id: task.id, type: 'TASK' },
+        begin: onDragStart,
+        end: onDragEnd,
+        collect: (monitor) => ({
+            isDragging: monitor.isDragging()
+        })
+    });
+
+    return (
+        <>
+            <div
+                ref={drag}
+                className={`task-card ${isDragging ? 'dragging' : ''}`}
+                style={{
+                    backgroundColor: getCategoryColor(task.category),
+                    opacity: dragState ? 0.5 : 1
+                }}
+                onDoubleClick={() => setShowDetails(true)}
+            >
+                <div className="task-title">{task.title}</div>
+                <div className="task-time">
+                    {formatTime(task.start_time)} - {formatTime(task.end_time)}
+                </div>
+                {task.classroom_id && (
+                    <div className="task-classroom">
+                        {getClassroomName(task.classroom_id)}
+                    </div>
+                )}
+            </div>
+
+            {showDetails && (
+                <TaskDetailsModal
+                    task={task}
+                    onClose={() => setShowDetails(false)}
+                />
+            )}
+        </>
+    );
+};
+```
+
+#### ConflictModal
+```typescript
+// ConflictModal.tsx
+import { Assignment } from '../types';
+import { useAssignmentStore } from '../stores/assignmentStore';
+
+interface ConflictModalProps {
+    currentAssignment: Assignment;
+    newAssignment: Assignment;
+    onResolve: (action: 'replace' | 'cancel') => void;
+}
+
+export const ConflictModal: React.FC<ConflictModalProps> = ({
+    currentAssignment,
+    newAssignment,
+    onResolve
+}) => {
+    const { replaceAssignment } = useAssignmentStore();
+
+    const handleReplace = async () => {
+        try {
+            await replaceAssignment(currentAssignment.id, newAssignment);
+            onResolve('replace');
+        } catch (error) {
+            showError('Failed to replace assignment');
+        }
+    };
+
+    return (
+        <div className="modal conflict-modal">
+            <h2>Schedule Conflict</h2>
+            
+            <div className="conflict-details">
+                <div className="current-assignment">
+                    <h3>Current Assignment</h3>
+                    <AssignmentDetails assignment={currentAssignment} />
+                </div>
+                
+                <div className="new-assignment">
+                    <h3>New Assignment</h3>
+                    <AssignmentDetails assignment={newAssignment} />
+                </div>
+            </div>
+
+            <div className="modal-actions">
+                <button
+                    className="btn btn-primary"
+                    onClick={handleReplace}
+                >
+                    Replace Current Assignment
+                </button>
+                <button
+                    className="btn btn-secondary"
+                    onClick={() => onResolve('cancel')}
+                >
+                    Cancel
+                </button>
+            </div>
+        </div>
+    );
+};
+```
+
+#### AbsenceModal
+```typescript
+// AbsenceModal.tsx
+import { DatePicker } from './DatePicker';
+import { useAbsenceStore } from '../stores/absenceStore';
+
+interface AbsenceModalProps {
+    aideId: number;
+    onClose: () => void;
+}
+
+export const AbsenceModal: React.FC<AbsenceModalProps> = ({
+    aideId,
+    onClose
+}) => {
+    const [date, setDate] = useState<Date | null>(null);
+    const [reason, setReason] = useState('');
+    const { createAbsence } = useAbsenceStore();
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!date) return;
+
+        try {
+            await createAbsence({
+                aide_id: aideId,
+                date: formatDate(date),
+                reason
+            });
+            onClose();
+        } catch (error) {
+            showError('Failed to mark absence');
+        }
+    };
+
+    return (
+        <div className="modal absence-modal">
+            <h2>Mark Absence</h2>
+            
+            <form onSubmit={handleSubmit}>
+                <div className="form-group">
+                    <label>Date</label>
+                    <DatePicker
+                        value={date}
+                        onChange={setDate}
+                        minDate={new Date()}
+                        excludeDates={getHolidays()}
+                    />
+                </div>
+
+                <div className="form-group">
+                    <label>Reason (Optional)</label>
+                    <textarea
+                        value={reason}
+                        onChange={e => setReason(e.target.value)}
+                        placeholder="Enter reason for absence..."
+                    />
+                </div>
+
+                <div className="modal-actions">
+                    <button
+                        type="submit"
+                        className="btn btn-primary"
+                        disabled={!date}
+                    >
+                        Mark Absent
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={onClose}
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    );
+};
+```
+
+### Custom Hooks
+
+#### useScheduleStore
+```typescript
+// hooks/useScheduleStore.ts
+import create from 'zustand';
+import { Assignment, Aide } from '../types';
+
+interface ScheduleState {
+    aides: Aide[];
+    assignments: Record<number, Assignment[]>;
+    isLoading: boolean;
+    error: string | null;
+    fetchSchedule: (week: string) => Promise<void>;
+    updateAssignment: (assignment: Assignment) => Promise<void>;
+}
+
+export const useScheduleStore = create<ScheduleState>((set, get) => ({
+    aides: [],
+    assignments: {},
+    isLoading: false,
+    error: null,
+
+    fetchSchedule: async (week: string) => {
+        set({ isLoading: true, error: null });
+        try {
+            const [aides, assignments] = await Promise.all([
+                fetchAides(),
+                fetchAssignments(week)
+            ]);
+            set({ aides, assignments, isLoading: false });
+        } catch (error) {
+            set({ error: 'Failed to load schedule', isLoading: false });
+        }
+    },
+
+    updateAssignment: async (assignment: Assignment) => {
+        try {
+            await updateAssignmentApi(assignment);
+            const { assignments } = get();
+            set({
+                assignments: {
+                    ...assignments,
+                    [assignment.aide_id]: assignments[assignment.aide_id].map(a =>
+                        a.id === assignment.id ? assignment : a
+                    )
+                }
+            });
+        } catch (error) {
+            set({ error: 'Failed to update assignment' });
+        }
+    }
+}));
+```
+
+#### useDragAndDrop
+```typescript
+// hooks/useDragAndDrop.ts
+import { useCallback } from 'react';
+import { useScheduleStore } from './useScheduleStore';
+import { TimeSlot } from '../types';
+
+export const useDragAndDrop = (week: string) => {
+    const { updateAssignment } = useScheduleStore();
+
+    const handleDrop = useCallback(async (
+        assignmentId: number,
+        slot: TimeSlot
+    ) => {
+        try {
+            // Check for conflicts
+            const hasConflict = await checkConflict(assignmentId, slot);
+            if (hasConflict) {
+                return { hasConflict: true };
+            }
+
+            // Update assignment
+            await updateAssignment({
+                id: assignmentId,
+                ...slot
+            });
+
+            return { success: true };
+        } catch (error) {
+            return { error: 'Failed to update assignment' };
+        }
+    }, [updateAssignment]);
+
+    return { handleDrop };
+};
+```
+
+### Utility Functions
+
+```typescript
+// utils/time.ts
+export const generateTimeSlots = (
+    start: string,
+    end: string,
+    intervalMinutes: number
+): string[] => {
+    const slots: string[] = [];
+    let current = parseTime(start);
+    const endTime = parseTime(end);
+
+    while (current < endTime) {
+        slots.push(formatTime(current));
+        current += intervalMinutes * 60 * 1000;
+    }
+
+    return slots;
+};
+
+export const formatTime = (time: string | number): string => {
+    if (typeof time === 'string') {
+        return time;
+    }
+    const date = new Date(time);
+    return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
+};
+
+// utils/validation.ts
+export const validateTimeSlot = (
+    start: string,
+    end: string
+): { isValid: boolean; error?: string } => {
+    const startTime = parseTime(start);
+    const endTime = parseTime(end);
+    const schoolStart = parseTime('08:00');
+    const schoolEnd = parseTime('16:00');
+
+    if (startTime < schoolStart || endTime > schoolEnd) {
+        return {
+            isValid: false,
+            error: 'Time must be within school hours (08:00-16:00)'
+        };
+    }
+
+    if (endTime <= startTime) {
+        return {
+            isValid: false,
+            error: 'End time must be after start time'
+        };
+    }
+
+    return { isValid: true };
+};
+```
+
+## Business Rules
+
+1. **Time Constraints**
+   - School hours: 08:00 - 16:00
+   - Minimum task duration: 30 minutes
+   - Maximum task duration: 4 hours
+
+2. **Assignment Rules**
+   - No double-booking of aides
+   - Tasks must be assigned to available aides only
+   - Recurring tasks generate assignments 4 weeks ahead
+
+3. **Absence Handling**
+   - Absences release all assignments for that day
+   - Released assignments return to unassigned pool
+   - Undoing absence attempts to restore assignments if slots are free
+
+## Implementation Guidelines
+
+1. **State Management**
+   - Use Zustand for global state
+   - Normalize assignments by date → aide_id → slot_key
+   - Cache absence data for quick lookups
+
+2. **Performance Considerations**
+   - Lazy load assignment data by week
+   - Implement optimistic updates for drag-and-drop
+   - Cache conflict check results
+
+3. **Error Handling**
+   - Implement retry logic for failed API calls
+   - Show user-friendly error messages
+   - Log errors to monitoring service
+
+4. **Testing Strategy**
+   - Unit tests for business logic
+   - Integration tests for API endpoints
+   - E2E tests for critical user flows
+
+## Development Workflow
+
+1. **Setup**
+   ```bash
+   # Backend
+   python -m venv venv
+   source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+   pip install -r requirements.txt
+   flask db upgrade
+   flask run
+
+   # Frontend
+   npm install
+   npm run dev
+   ```
+
+2. **Database Migrations**
+   ```bash
+   flask db migrate -m "description"
+   flask db upgrade
+   ```
+
+3. **Testing**
+   ```bash
+   # Backend
+   pytest
+
+   # Frontend
+   npm test
+   ```
+
+## Deployment Checklist
+
+1. Environment Variables
+   - `DATABASE_URL`
+   - `SECRET_KEY`
+   - `FLASK_ENV`
+   - `API_BASE_URL`
+
+2. Database Setup
+   - Run migrations
+   - Seed initial data
+   - Set up backups
+
+3. Frontend Build
+   - Set production API URL
+   - Build static assets
+   - Configure CDN
+
+## Future Enhancements
+
+1. Authentication & Authorization
+   - JWT-based auth
+   - Role-based access control
+   - SSO integration
+
+2. Notifications
+   - Email digests
+   - Push notifications
+   - Calendar integration
+
+3. Reporting
+   - PDF exports
+   - Analytics dashboard
+   - Custom reports
+
+---
+
+## 1 Purpose
+
+This document expands the initial PRD by translating requirements into a concrete, first‑pass technical and UI design. It focuses on representing one‑off and recurring teacher‑aide tasks, delivering a purely visual drag‑and‑drop workflow, and enforcing collision handling when an aide already has a duty in the same slot.
+
+---
+
+## 2 Task Model Enhancements
+
+| Field             | Type            | Description                                                          |
+| ----------------- | --------------- | -------------------------------------------------------------------- |
+| `id`              | int             | Primary key                                                          |
+| `title`           | string          | Short, human‑readable label (e.g. *Playground Duty – Year 3 Oval*)   |
+| `category`        | enum            | `PLAYGROUND`, `CLASS_SUPPORT`, `GROUP_SUPPORT`, `INDIVIDUAL_SUPPORT` |
+| `start_time`      | time            | Local school time (08:00 ≤ t < 16:00)                                |
+| `end_time`        | time            | Exclusive upper bound                                                |
+| `recurrence_rule` | string nullable | iCal RRULE such as `FREQ=WEEKLY;BYDAY=MO,WE,FR` (null ↔ one‑off)     |
+| `expires_on`      | date nullable   | Final date for generating instances                                  |
+| `classroom_id`    | FK nullable     | Links to `Classroom` if relevant                                     |
+| `notes`           | text            | Free‑form instructions                                               |
+| `status`          | enum            | `UNASSIGNED`, `ASSIGNED`, `IN_PROGRESS`, `COMPLETE`                  |
+
+### Assignment vs Task
+
+`Task` describes the work; `Assignment` links a **materialised** occurrence of that task (date + time) to a specific aide.
+
+---
+
+## 3 Database Entities (SQLAlchemy)
+
+The database schema is implemented using SQLAlchemy ORM with the following models:
+
+### TeacherAide
+```python
+class TeacherAide(Base):
+    __tablename__ = 'teacher_aide'
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    qualifications = Column(Text)
+    colour_hex = Column(String(7), nullable=False)  # For timetable visualization
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+
+    # Relationships
+    availabilities = relationship('Availability', back_populates='aide', cascade='all, delete-orphan')
+    assignments = relationship('Assignment', back_populates='aide')
+    absences = relationship('Absence', back_populates='aide', cascade='all, delete-orphan')
+
+    def is_available(self, date: date, start_time: time, end_time: time) -> bool:
+        """Check if aide is available for given time slot."""
+        if any(absence.date == date for absence in self.absences):
+            return False
+        weekday = date.strftime('%A').upper()
+        return any(
+            availability.weekday == weekday and
+            availability.start_time <= start_time and
+            availability.end_time >= end_time
+            for availability in self.availabilities
+        )
+```
+
+### Availability
+```python
+class Availability(Base):
+    __tablename__ = 'availability'
+    
+    id = Column(Integer, primary_key=True)
+    aide_id = Column(Integer, ForeignKey('teacher_aide.id'), nullable=False)
+    weekday = Column(String(2), nullable=False)  # MO, TU, WE, TH, FR
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    # Relationships
+    aide = relationship('TeacherAide', back_populates='availabilities')
+
+    # Constraints
+    __table_args__ = (
+        CheckConstraint('weekday IN ("MO", "TU", "WE", "TH", "FR")'),
+        CheckConstraint('start_time < end_time'),
+        CheckConstraint('start_time >= "08:00"'),
+        CheckConstraint('end_time <= "16:00"'),
+        UniqueConstraint('aide_id', 'weekday', name='uq_availability_aide_weekday')
+    )
+```
+
+### Task
+```python
+class Task(Base):
+    __tablename__ = 'task'
+    
+    id = Column(Integer, primary_key=True)
+    title = Column(String(200), nullable=False)
+    category = Column(
+        Enum('PLAYGROUND', 'CLASS_SUPPORT', 'GROUP_SUPPORT', 'INDIVIDUAL_SUPPORT'),
+        nullable=False
+    )
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
+    recurrence_rule = Column(String(200))  # iCal RRULE format
+    expires_on = Column(Date)
+    classroom_id = Column(Integer, ForeignKey('classroom.id'))
+    notes = Column(Text)
+    status = Column(
+        Enum('UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETE'),
+        nullable=False,
+        default='UNASSIGNED'
+    )
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+
+    # Relationships
+    classroom = relationship('Classroom', back_populates='tasks')
+    assignments = relationship('Assignment', back_populates='task', cascade='all, delete-orphan')
+
+    def generate_assignments(self, start_date: date, end_date: date) -> List['Assignment']:
+        """Generate assignments for a date range based on recurrence rule."""
+        if not self.recurrence_rule:
+            return []
+        from dateutil.rrule import rrulestr
+        rule = rrulestr(self.recurrence_rule, dtstart=start_date)
+        dates = list(rule.between(start_date, end_date))
+        return [
+            Assignment(
+                task_id=self.id,
+                date=d,
+                start_time=self.start_time,
+                end_time=self.end_time,
+                status='UNASSIGNED'
+            )
+            for d in dates
+        ]
+```
+
+### Assignment
+```python
+class Assignment(Base):
+    __tablename__ = 'assignment'
+    
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey('task.id'), nullable=False)
+    aide_id = Column(Integer, ForeignKey('teacher_aide.id'))
+    date = Column(Date, nullable=False)
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
+    status = Column(
+        Enum('UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETE'),
+        nullable=False,
+        default='UNASSIGNED'
+    )
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+
+    # Relationships
+    task = relationship('Task', back_populates='assignments')
+    aide = relationship('TeacherAide', back_populates='assignments')
+
+    def check_conflicts(self) -> List['Assignment']:
+        """Check for scheduling conflicts with other assignments."""
+        if not self.aide_id:
+            return []
+        return Assignment.query.filter(
+            Assignment.aide_id == self.aide_id,
+            Assignment.date == self.date,
+            Assignment.id != self.id,
+            (
+                (Assignment.start_time <= self.start_time < Assignment.end_time) |
+                (Assignment.start_time < self.end_time <= Assignment.end_time) |
+                (self.start_time <= Assignment.start_time < self.end_time)
+            )
+        ).all()
+```
+
+### Absence
+```python
+class Absence(Base):
+    __tablename__ = 'absence'
+    
+    id = Column(Integer, primary_key=True)
+    aide_id = Column(Integer, ForeignKey('teacher_aide.id'), nullable=False)
+    date = Column(Date, nullable=False)
+    reason = Column(String(200))
+    created_at = Column(DateTime, server_default=func.now())
+
+    # Relationships
+    aide = relationship('TeacherAide', back_populates='absences')
+
+    def release_assignments(self) -> List[Assignment]:
+        """Release all assignments for this absence date."""
+        assignments = Assignment.query.filter_by(
+            aide_id=self.aide_id,
+            date=self.date
+        ).all()
+        for assignment in assignments:
+            assignment.aide_id = None
+            assignment.status = 'UNASSIGNED'
+        return assignments
+```
+
+### Classroom
+```python
+class Classroom(Base):
+    __tablename__ = 'classroom'
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    capacity = Column(Integer)
+    notes = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+
+    # Relationships
+    tasks = relationship('Task', back_populates='classroom')
+```
+
+### Key Features
+1. **Relationships**: All models use SQLAlchemy relationships with appropriate cascade behaviors
+2. **Constraints**: 
+   - Time slots must be within school hours (08:00-16:00)
+   - No double-booking of aides
+   - One absence per aide per date
+3. **Helper Methods**:
+   - `is_available()`: Check aide availability
+   - `generate_assignments()`: Create recurring task instances
+   - `check_conflicts()`: Detect scheduling conflicts
+   - `release_assignments()`: Handle absence impacts
+
+### Database Migrations
+The schema is managed using Alembic migrations, with the initial migration creating all tables with appropriate constraints and relationships.
+
+## 4 Scheduling Logic
+
+1. **Grid Resolution**: 30‑minute blocks Monday → Friday.
+2. **Unassigned Column**: left‑hand stack, filterable by weekday & category.
+3. **Drag Source**: `TaskCard` (unassigned OR recurring stub) → drop target `TimetableSlot`.
+4. **Conflict Detection**: before commit, backend `/api/assignments/check` returns existing assignment (if any).
+5. **Conflict Modal**:
+
+   * Shows *Current* vs *New* details.
+   * Buttons: **Replace** → PATCH current assignment status ➔ *UNASSIGNED*; **Cancel**.
+6. **Recurrence Drops**: If dropping a recurring task stub, UI prompts for which weekdays to apply (pre‑ticked from RRULE). Creates batch via `/api/assignments/batch`.
+
+## 5 React Component Hierarchy
+
+```text
+<SchedulePage>
+ ├─ <UnassignedTaskList/>
+ ├─ <AideTimetable aid="Alice"/>
+ │   └─ <TimetableGrid>
+ │        └─ <TimetableSlot/>
+ └─ …repeat for each aide
+```
+
+* **State**: managed with React Context + `useReducer` or Zustand; keeps assignments normalised by `date → aide_id → slot_key`.
+* **Drag‑and‑Drop**: `react-dnd` with HTML5 backend.
+* **Visuals**: category colour strip + aide tint background for high contrast.
+
+## 6 API Surface (Flask‑RESTful)
+
+| Method | Endpoint                        | Purpose                                      |
+| ------ | ------------------------------- | -------------------------------------------- |
+| GET    | `/api/tasks`                    | List all tasks (optionally `?status=UNASSIGNED`) |
+| POST   | `/api/tasks`                    | Create one‑off task                              |
+| POST   | `/api/recurring-tasks`          | Create task with RRULE                           |
+| GET    | `/api/assignments?week=YYYY‑WW` | Weekly matrix for UI                             |
+| POST   | `/api/assignments`              | Assign single occurrence                         |
+| POST   | `/api/assignments/batch`        | Create many (recurring)                          |
+| POST   | `/api/assignments/check`        | Collision probe (dry‑run)                        |
+| PATCH  | `/api/assignments/<id>`         | Update status or reassign                        |
+
+## 7 Recurrence Engine
+
+* **Library**: `dateutil.rrule` to materialise future dates.
+* **Generation Strategy**: on task creation, eagerly create assignment shells for the next 4 school weeks (configurable). Cron job regenerates rolling horizon each weekend.
+
+## 8 Timetable UI Details
+
+| Element         | Behaviour                                                               |
+| --------------- | ----------------------------------------------------------------------- |
+| Empty Slot      | Light outline; accepts drops that fall within slot bounds               |
+| Task Chip       | Fixed height per slot; show title trimmed; double‑click → details panel |
+| Hover           | Tooltip with full notes, classroom, students                            |
+| Replacement     | Red outline on hovered slot if occupied                                 |
+| Unassigned List | Sticky header per weekday; search box                                   |
+
+## 9 Implementation Roadmap
+
+1. **Schema Migration** – set up models & Alembic.
+2. **Seed Script** – aides, classrooms, five demo tasks.
+3. **Assignment API** – CRUD + collision check.
+4. **Frontend Skeleton** – React Router, global state, drag stubs.
+5. **Timetable Grid** – static first, then DnD.
+6. **Conflict Modal** – wire to `/check` endpoint.
+7. **Recurring Workflow** – task creation wizard & batch endpoint.
+8. **Polish** – colour legend, keyboard shortcuts, accessibility labels.
+
+## 10 Future Enhancements (Post‑MVP)
+
+* Authentication & role‑based authorisation (Flask‑Login & JWT)
+* Push notifications (e‑mail digest, PWA service workers)
+* Report generator (CSV & PDF export)
+* Mobile‑responsive timetable (CSS Grid with swipe).
+
+## 11 Open Questions
+
+1. Should recurring playground duties auto‑generate for the full term (10 weeks) instead of rolling 4 weeks?
+2. How should aide leave days interact with pre‑assigned recurring duties?
+3. Any colour‑blind‑safe palette requirements?
+
+*Prepared 04 June 2025 – All timelines and field names in this draft are illustrative.*
+
+## Additional Information
+# Teacher Aide Scheduler – Comprehensive Functional Specification
+
+*Version 0.9 (Draft) – 04 June 2025*
+
+## 1 Introduction
+
+This specification consolidates all functional behaviour expected for the **Teacher Aide Scheduler** MVP (Flask + React). It is intended for developers, testers, and stakeholders to confirm application scope and acceptance criteria.
+
+## 2 User Roles & Permissions (MVP)
+
+| Role              | Capabilities                                                                                                                                                                                                                       |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Administrator** | • Full CRUD on Teacher Aides, Classrooms, Tasks, Assignments, Absences<br>• Drag‑and‑drop scheduling<br>• Mark aides absent for specific dates<br>• View timetable for all aides<br>• Replace conflicting tasks<br>• Undo absences |
+| **Teacher Aide**  | • View personal timetable (read‑only)<br>• Update task status to *In Progress* or *Complete*                                                                                                                                       |
+| **Teacher**       | • Request new aide support tasks (form)                                                                                                                                                                                            |
+
+> **Note**: Authentication/authorisation will be added post‑MVP. For now, all users operate with Administrator privileges in the UI, but the design anticipates role separation.
+
+## 3 Core Data Objects
+
+### 3.1 TeacherAide
+
+* `id`, `name`, `qualifications`, `colour_hex`
+* Relationships: *Availability\[ ]*, *Assignment\[ ]*, *Absence\[ ]*
+
+### 3.2 Availability
+
+* `weekday` (`MO…FR`), `start_time`, `end_time`
+
+### 3.3 Classroom
+
+* `id`, `name`, `capacity`, `notes`
+
+### 3.4 Task
+
+* `title`, `category` (`PLAYGROUND`, `CLASS_SUPPORT`, `GROUP_SUPPORT`, `INDIVIDUAL_SUPPORT`), `start_time`, `end_time`, `recurrence_rule?`, `expires_on?`, `classroom_id?`, `notes`, `status`
+
+### 3.5 Assignment
+
+* Concrete instance of a Task on a date, optionally linked to an aide.
+* `date`, `start_time`, `end_time`, `status` (`UNASSIGNED`, `ASSIGNED`, `IN_PROGRESS`, `COMPLETE`)
+
+### 3.6 Absence
+
+* `aide_id`, `date`, `reason?`
+
+## 4 Functional Modules
+
+### 4.1 Task Management
+
+| Function        | Description                                                        | Acceptance Criteria                                                                             |
+| --------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| **Create Task** | Admin creates one‑off or recurring duty.                           | • Required fields validated.<br>• Recurring RRULE generates assignment shells for next 4 weeks. |
+| **Edit Task**   | Change title, times, category, notes (not date once saved).        | • Updates propagate to future un-started assignments.                                           |
+| **Delete Task** | Remove future occurrences; historical assignments remain archived. | • Warning modal confirms cascade effect.                                                        |
+
+\### 4.2 Scheduling & Drag‑and‑Drop
+
+| Action                                         | Behaviour                                                                           |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **Drag task from Unassigned → Timetable Slot** | Creates/updates Assignment with `aide_id`. Collision check prevents double‑booking. |
+| **Drag task between aides**                    | Reassigns without changing time. Collision rules apply.                             |
+| **Replace Conflict**                           | Modal shows current vs new; on confirm, previous assignment returns to Unassigned.  |
+| **Batch Drops (recurring stub)**               | Wizard lets admin select weekdays to materialise.                                   |
+
+\### 4.3 Absence Handling
+
+| Scenario                | Outcome                                                                                  |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| Mark aide absent (date) | All that day's assignments set to `UNASSIGNED` & moved to list. Column visually striped. |
+| Undo absence            | Attempts to restore released assignments if slot still free; otherwise stays unassigned. |
+
+\### 4.4 Timetable Visualisation
+
+* Grid Monday → Friday, 08:00 – 16:00 in 30‑min rows.
+* Column per aide, coloured header with aide tint.
+* Hover tooltip shows full task details.
+* Striped overlay for absence; red outline on invalid drops.
+
+\### 4.5 Status Tracking (Aide View)
+
+* Click assignment chip → status toggle cycle.
+* Completed tasks strike‑through title, fade colour.
+
+\### 4.6 Teacher Requests (Simplified)
+
+* Teacher submits form (title, category, date, times, notes).
+* Generates *UNASSIGNED* task awaiting admin approval & scheduling.
+
+## 5 REST API Endpoints
+
+| Method | Path                            | Purpose                                      |
+| ------ | ------------------------------- | -------------------------------------------- |
+| GET    | `/api/teacher-aides`            | List aides                                   |
+| POST   | `/api/teacher-aides`            | Create aide                                  |
+| GET    | `/api/tasks`                    | List tasks (filters: status, date, category) |
+| POST   | `/api/tasks`                    | Create task                                  |
+| POST   | `/api/recurring-tasks`          | Create recurring                             |
+| GET    | `/api/assignments?week=YYYY-WW` | Weekly matrix                                |
+| POST   | `/api/assignments`              | Assign single                                |
+| POST   | `/api/assignments/batch`        | Assign many                                  |
+| POST   | `/api/assignments/check`        | Collision dry‑run                            |
+| PATCH  | `/api/assignments/<id>`         | Update status or move                        |
+| POST   | `/api/absences`                 | Mark absence                                 |
+| DELETE | `/api/absences/<id>`            | Remove absence                               |
+
+All endpoints return JSON and follow standard HTTP status codes.
+
+## 6 UI Component Map (React)
+
+```text
+<App>
+ └─ <SchedulePage>
+      ├─ <Toolbar>
+      ├─ <UnassignedTaskList/>
+      ├─ <AideTimetable aid="*"/>
+      │    └─ <TimetableGrid>
+      │         └─ <TimetableSlot/>
+      ├─ <TaskCreationModal/>
+      ├─ <ConflictModal/>
+      └─ <AbsenceModal/>
+```
+
+## 7 Validation & Error Handling
+
+* **Form Validation**: times within school hours, `end_time` > `start_time`.
+* **Collision Response**: API 409 with conflicting assignment details.
+* **Unique Constraints**: One absence per aide per date; tasks cannot overlap a single assignment.
+
+## 8 Non‑Functional Requirements
+
+* Runs offline from local HTML/JS & SQLite file.
+* Response time < 150 ms for collision checks on typical data set (<500 assignments/week).
+* Accessible colour palette (WCAG AA contrast ratio).
+
+## 9 Future Roadmap (Out of MVP)
+
+1. Authentication/JWT + role-based UI pruning.
+2. Push notifications (PWA, e‑mail digests).
+3. Reporting dashboard with CSV/PDF export.
+4. Half‑day absences, annual leave sync.
+5. Mobile responsive compact view.
+
+## 10 Acceptance Criteria Summary
+
+1. Admin can create tasks (one‑off & recurring) ✔️
+2. Drag‑and‑drop assigns tasks, with conflict resolution modal ✔️
+3. Marking an aide absent re‑queues their day's assignments ✔️
+4. Timetable shows correct data & visual states (assigned, unassigned, absent, completed) ✔️
+5. Aides can update status via click ✔️
+
+## 11 Open Questions
+
+1. Should recurring playground duties auto‑generate for the full term (10 weeks) instead of rolling 4 weeks?
+2. How should aide leave days interact with pre‑assigned recurring duties?
+3. Any colour‑blind‑safe palette requirements?
+
+*Prepared 04 June 2025 – All timelines and field names in this draft are illustrative.*
+
+
+

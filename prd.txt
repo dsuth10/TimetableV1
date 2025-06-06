@@ -1,0 +1,281 @@
+## 1. Overview
+
+The **Teacher Aide Scheduler** is a desktop‑optimised web application that enables Queensland primary‑school administrators to allocate teacher aides to classrooms and support tasks quickly via a visual, drag‑and‑drop timetable. Powered by a Flask REST API, React front‑end, and a local SQLite database, the MVP runs completely offline from a single HTML bundle and database file.
+
+
+## 2. Problem Statement
+
+Schools struggle to:
+
+* Match aide availability and qualifications with fast‑changing classroom needs.
+* Track playground duty, whole‑class, group and one‑to‑one support tasks efficiently.
+* React to last‑minute aide absences without disrupting learning.
+* Coordinate schedules using ad‑hoc spreadsheets that provide no conflict checking.
+
+These pain‑points lead to double‑booked aides, missed duties and significant admin overhead.
+
+
+## 3. Solution Summary
+
+The Scheduler delivers a centralised timetable grid (Monday–Friday, 08:00–16:00 in 30‑minute slots) with:
+
+* **Unassigned Task Column** – newly created or released duties awaiting placement.
+* **Drag‑and‑Drop Assignment** – tasks (one‑off or recurring) are dragged onto an aide’s timetable; collisions prompt a replace‑or‑cancel modal.
+* **Recurring Duty Engine** – iCal RRULEs auto‑generate occurrences for the entire current school term (10 weeks) when the task is "Playground Duty" or any other recurring category, eliminating the need for weekly re‑creation. (Configurable: MVP uses 4-week rolling horizon, but term-long generation is supported.)
+* **Absence Handling** – mark an aide absent for a date or half‑day; relevant duties return to the Unassigned list for redistribution. Undo is supported if slots are still free.
+* **Real‑time Status Updates** – aides tick tasks *In Progress* or *Complete*; admins see progress instantly.
+
+All interactions are exposed via a clean REST API for future integrations.
+
+
+## 4. Users & User Experience
+
+| Role              | Key Screens                                            | Primary Actions                                                                    |
+| ----------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| **Administrator** | Full timetable, Unassigned list, Task & Absence modals | Create/edit tasks, assign via DnD, resolve conflicts, mark absences, undo absences |
+| **Teacher Aide**  | My Timetable                                           | View duties, change status (In Progress / Complete)                                |
+| **Teacher**       | Request Form                                           | Submit new support requests (become Unassigned tasks)                              |
+
+UX Principles:
+
+* Colour‑coded categories and aide tinting for immediate clarity.
+* Keyboard shortcuts and search in the Unassigned pane.
+* WCAG AA compliant palette for colour‑blind users.
+* Accessible overlays and tooltips for all interactive elements.
+
+
+## 5. Data Model & Relationships
+
+## 5.1 Entity Overview
+
+| Entity         | Fields                                                                                                                                         | Relationships                                      |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| TeacherAide    | id, name, qualifications, colour_hex                                                                                                           | Availability[], Assignment[], Absence[]            |
+| Availability   | id, aide_id (FK), weekday (MO–FR), start_time, end_time                                                                                        | TeacherAide                                        |
+| Classroom      | id, name, capacity, notes                                                                                                                      | Task[]                                             |
+| Task           | id, title, category (PLAYGROUND, CLASS_SUPPORT, GROUP_SUPPORT, INDIVIDUAL_SUPPORT), start_time, end_time, recurrence_rule, expires_on, classroom_id, notes, status (UNASSIGNED, ASSIGNED, IN_PROGRESS, COMPLETE) | Classroom, Assignment[]                            |
+| Assignment     | id, task_id (FK), aide_id (FK, nullable), date, start_time, end_time, status (UNASSIGNED, ASSIGNED, IN_PROGRESS, COMPLETE)                     | Task, TeacherAide                                  |
+| Absence        | id, aide_id (FK), date, reason (optional), created_at                                                                                          | TeacherAide                                        |
+
+## 5.2 Relationships
+
+- **TeacherAide** has many **Availability**, **Assignment**, **Absence**
+- **Task** may belong to a **Classroom**
+- **Task** has many **Assignment** (materialised occurrences)
+- **Assignment** links a Task occurrence to an aide (or is unassigned)
+- **Absence** is unique per aide per date (enforced by DB constraint)
+
+## 5.3 Recurrence & Assignment
+
+- Tasks may have an iCal RRULE (recurrence_rule) and an expires_on date.
+- On creation, recurring tasks generate assignment shells for the next 4 weeks (MVP) or full 10-week term (configurable).
+- A cron job (or scheduled task) extends the assignment horizon each week or term.
+
+
+## 6. API Surface
+
+| Method | Endpoint                        | Purpose                                          |
+| ------ | ------------------------------- | ------------------------------------------------ |
+| GET    | /api/teacher-aides              | List aides                                       |
+| POST   | /api/teacher-aides              | Create aide                                      |
+| GET    | /api/tasks                      | List tasks (filters: status, date, category)     |
+| POST   | /api/tasks                      | Create one-off task                              |
+| POST   | /api/recurring-tasks            | Create recurring task (with RRULE)               |
+| GET    | /api/assignments?week=YYYY-WW   | Weekly matrix for UI                             |
+| POST   | /api/assignments                | Assign single occurrence                         |
+| POST   | /api/assignments/batch          | Assign many (recurring)                          |
+| POST   | /api/assignments/check          | Collision probe (dry-run)                        |
+| PATCH  | /api/assignments/<id>           | Update status or reassign                        |
+| POST   | /api/absences                   | Mark aide absent {aide_id, date, reason}         |
+| DELETE | /api/absences/<id>              | Remove absence (re-link tasks if possible)       |
+| GET    | /api/absences?week=YYYY-WW      | List absences for timetable overlay              |
+
+- All endpoints return JSON and follow standard HTTP status codes.
+- 409 Conflict is returned for assignment collisions or duplicate absences.
+
+
+## 7. Scheduling & Recurrence Logic
+
+- **Grid Resolution**: 30-minute blocks, Monday–Friday, 08:00–16:00.
+- **Unassigned Column**: left-hand stack, filterable by weekday & category.
+- **Drag Source**: TaskCard (unassigned or recurring stub) → drop target TimetableSlot.
+- **Conflict Detection**: before commit, backend /api/assignments/check returns existing assignment (if any).
+- **Conflict Modal**: shows current vs new details; Replace (PATCH current assignment to UNASSIGNED) or Cancel.
+- **Recurrence Drops**: Dropping a recurring task stub prompts for which weekdays to apply (pre-ticked from RRULE). Creates batch via /api/assignments/batch.
+- **Recurrence Engine**: Uses dateutil.rrule to materialise future dates. On task creation, eagerly create assignment shells for the next 4 school weeks (configurable). Cron job regenerates rolling horizon each weekend.
+
+
+## 8. Absence Handling
+
+## 8.1 Business Rules
+
+1. **Date-Scoped Only** – An absence applies to the selected calendar date(s) only; future instances of recurring duties remain assigned.
+2. **Atomic Reassignment** – When an absence is confirmed, every Assignment for that aide and date is:
+   - Set to aide_id = NULL, status = UNASSIGNED.
+   - Pushed to the Unassigned Task List where any admin can drag it onto another aide.
+3. **Undo Capability** – Deleting an absence record instantly re-links the released assignments provided the slots are still free.
+4. **Leave Takes Precedence** – During drag-and-drop the UI must reject drops onto an aide who is absent that day (red overlay + tooltip "Marked absent").
+
+## 8.2 Data Model
+
+- Absence table: id, aide_id (FK), date, reason (optional), created_at
+- Unique constraint: (aide_id, date)
+
+## 8.3 API Flow
+
+- POST /api/absences: Insert Absence row, update Assignments (set aide_id = NULL, status = UNASSIGNED), return released assignment IDs.
+- DELETE /api/absences/<id>: Remove absence, attempt to re-link released assignments if slots are still free.
+- GET /api/absences?week=YYYY-WW: List absences for timetable overlay.
+
+## 8.4 UI/UX
+
+- Aide List Pane: calendar-minus icon next to each aide; click opens Mark Absence modal (date picker, optional reason).
+- Timetable Overlay: grey diagonal stripes across the aide's column for absent dates; tooltip: "Absent – all duties unassigned."
+- Conflict & Validation: DnD rejects drops onto AbsentSlot with shake animation; absences cached in global timetable context for instant look-ups.
+
+## 8.5 Edge Cases & Tests
+
+| # | Scenario                                                                                                      | Expected                                                   |
+| - | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| 1 | Mark aide absent who has no tasks that day                                                                    | Absence created, no assignment updates                     |
+| 2 | Mark aide absent twice same day                                                                               | 409 Conflict from unique constraint                        |
+| 3 | Undo absence after tasks have been reassigned elsewhere                                                       | Only vacant slots are re-filled; others stay with new aide |
+| 4 | Create absence spanning public holiday (shouldn't be selectable in date picker if holidays calendar provided) | Date blocked                                               |
+
+
+## 9. UI Component Map & Visuals
+
+## 9.1 Component Hierarchy
+
+  ```text
+  <App>
+   └─ <SchedulePage>
+        ├─ <Toolbar>
+        ├─ <UnassignedTaskList/>
+        ├─ <AideTimetable aid="*"/>
+        │    └─ <TimetableGrid>
+        │         └─ <TimetableSlot/>
+        ├─ <TaskCreationModal/>
+        ├─ <ConflictModal/>
+        └─ <AbsenceModal/>
+  ```
+
+## 9.2 Visual & Interaction Details
+
+- **Timetable Grid**: Monday–Friday, 08:00–16:00, 30-min rows; column per aide, coloured header with aide tint.
+- **Unassigned List**: Sticky header per weekday; search box; filter by category.
+- **Task Chip**: Fixed height per slot; show title trimmed; double-click → details panel.
+- **Hover**: Tooltip with full notes, classroom, students.
+- **Replacement**: Red outline on hovered slot if occupied.
+- **Empty Slot**: Light outline; accepts drops that fall within slot bounds.
+- **Absence Overlay**: Grey diagonal stripes for absent aides; tooltip: "Absent – all duties unassigned."
+- **Accessibility**: WCAG AA contrast ratio, keyboard navigation, tooltips for all icons and interactive elements.
+
+
+## 10. Functional Modules & Acceptance Criteria
+
+## 10.1 Task Management
+
+| Function        | Description                                                        | Acceptance Criteria                                                                             |
+| --------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| Create Task     | Admin creates one-off or recurring duty.                           | Required fields validated. Recurring RRULE generates assignment shells for next 4 weeks.        |
+| Edit Task       | Change title, times, category, notes (not date once saved).        | Updates propagate to future un-started assignments.                                             |
+| Delete Task     | Remove future occurrences; historical assignments remain archived. | Warning modal confirms cascade effect.                                                          |
+
+## 10.2 Scheduling & Drag-and-Drop
+
+| Action                                         | Behaviour                                                                           |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Drag task from Unassigned → Timetable Slot     | Creates/updates Assignment with aide_id. Collision check prevents double-booking.   |
+| Drag task between aides                        | Reassigns without changing time. Collision rules apply.                             |
+| Replace Conflict                               | Modal shows current vs new; on confirm, previous assignment returns to Unassigned.  |
+| Batch Drops (recurring stub)                   | Wizard lets admin select weekdays to materialise.                                   |
+
+## 10.3 Absence Handling
+
+| Scenario                | Outcome                                                                                  |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| Mark aide absent (date) | All that day's assignments set to UNASSIGNED & moved to list. Column visually striped.   |
+| Undo absence            | Attempts to restore released assignments if slot still free; otherwise stays unassigned. |
+
+## 10.4 Timetable Visualisation
+
+- Grid Monday–Friday, 08:00–16:00 in 30-min rows.
+- Column per aide, coloured header with aide tint.
+- Hover tooltip shows full task details.
+- Striped overlay for absence; red outline on invalid drops.
+
+## 10.5 Status Tracking (Aide View)
+
+- Click assignment chip → status toggle cycle.
+- Completed tasks strike-through title, fade colour.
+
+## 10.6 Teacher Requests (Simplified)
+
+- Teacher submits form (title, category, date, times, notes).
+- Generates UNASSIGNED task awaiting admin approval & scheduling.
+
+
+## 11. Validation & Error Handling
+
+- **Form Validation**: times within school hours, end_time > start_time.
+- **Collision Response**: API 409 with conflicting assignment details.
+- **Unique Constraints**: One absence per aide per date; tasks cannot overlap a single assignment.
+
+
+## 12. Non-Functional Requirements
+
+- Runs offline from local HTML/JS & SQLite file.
+- Response time < 150 ms for collision checks on typical data set (<500 assignments/week).
+- Accessible colour palette (WCAG AA contrast ratio).
+- Desktop only, no authentication, local‑first operation, metric date/time formatting (AEST, 24‑hour clock).
+
+
+## 13. Roadmap & Out of Scope
+
+## 13.1 Implementation Roadmap
+
+1. Schema Migration – set up models & Alembic.
+2. Seed Script – aides, classrooms, five demo tasks.
+3. Assignment API – CRUD + collision check.
+4. Frontend Skeleton – React Router, global state, drag stubs.
+5. Timetable Grid – static first, then DnD.
+6. Conflict Modal – wire to /check endpoint.
+7. Recurring Workflow – task creation wizard & batch endpoint.
+8. Absence Module – modal, overlay, API logic.
+9. Polish – colour legend, keyboard shortcuts, accessibility labels.
+
+## 13.2 Out of Scope (for MVP)
+
+- Authentication & role-based authorisation.
+- Automated notifications (e-mail, PWA).
+- Analytics & reporting exports.
+- Mobile-responsive layout.
+
+
+## 14. Future Enhancements & Open Questions
+
+## 14.1 Future Enhancements
+
+- Authentication & role-based authorisation (Flask-Login & JWT)
+- Push notifications (e-mail digest, PWA service workers)
+- Report generator (CSV & PDF export)
+- Mobile-responsive timetable (CSS Grid with swipe)
+- Half-day absences (AM/PM) using start_time/end_time fields
+- Sync to HR-provided leave calendar via CSV import
+
+## 14.2 Open Questions
+
+1. Should recurring playground duties auto-generate for the full term (10 weeks) instead of rolling 4 weeks?
+2. How should aide leave days interact with pre-assigned recurring duties?
+3. Any colour-blind-safe palette requirements?
+4. Should public holidays be blocked in the absence date picker if a holidays calendar is provided?
+
+
+## 15. Acceptance Criteria Summary
+
+1. Admin can create tasks (one-off & recurring) ✔️
+2. Drag-and-drop assigns tasks, with conflict resolution modal ✔️
+3. Marking an aide absent re-queues their day's assignments ✔️
+4. Timetable shows correct data & visual states (assigned, unassigned, absent, completed) ✔️
+5. Aides can update status via click ✔️
