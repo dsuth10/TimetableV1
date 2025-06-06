@@ -66,7 +66,7 @@ class Availability(Base):
 
 class Classroom(Base):
     __tablename__ = 'classroom'
-    
+    __table_args__ = (UniqueConstraint('name', name='uq_classroom_name'),)
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
     capacity = Column(Integer)

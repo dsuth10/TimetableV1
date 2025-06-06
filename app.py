@@ -17,8 +17,10 @@ def create_app(engine=None):
     # Import and register blueprints
     from api.routes import api_bp
     from api.absence import absence_bp
+    from api.classroom import classroom_bp
     app.register_blueprint(api_bp, url_prefix='/api')
     app.register_blueprint(absence_bp, url_prefix='/api')
+    app.register_blueprint(classroom_bp, url_prefix='/api')
     # Initialize database
     from api.db import init_db
     with app.app_context():
