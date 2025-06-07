@@ -1,5 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import { Provider } from 'react-redux';
+import { LocalizationProvider } from '@mui/x-date-pickers';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { store } from './store';
 import Layout from './components/Layout';
 import Schedule from './pages/Schedule';
@@ -10,14 +12,16 @@ import Settings from './pages/Settings';
 function App() {
   return (
     <Provider store={store}>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Schedule />} />
-          <Route path="/aides" element={<AideManagement />} />
-          <Route path="/tasks" element={<TaskManagement />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
-      </Layout>
+      <LocalizationProvider dateAdapter={AdapterDateFns}>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Schedule />} />
+            <Route path="/aides" element={<AideManagement />} />
+            <Route path="/tasks" element={<TaskManagement />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+        </Layout>
+      </LocalizationProvider>
     </Provider>
   );
 }

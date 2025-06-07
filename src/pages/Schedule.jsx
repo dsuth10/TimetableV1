@@ -1,23 +1,15 @@
 import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Box, Typography } from '@mui/material';
+import { Box, Typography, Paper } from '@mui/material';
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 import { fetchTimetableData } from '../store/slices/timetableSlice';
 import AideTimetable from '../components/AideTimetable';
-import UnassignedTasks from '../components/UnassignedTasks';
+import UnassignedTaskList from '../components/UnassignedTaskList';
 
 function Schedule() {
   const dispatch = useDispatch();
   const { aides, assignments, absences, loading, error } = useSelector(state => state.timetable);
-
-  // Placeholder: filter unassigned tasks from assignments
-  const unassignedTasks = assignments
-    ? assignments.filter(a => a.status === 'UNASSIGNED').map(a => ({
-        id: a.id,
-        title: a.task,
-        duration: `${a.startTime} - ${a.endTime}`,
-        color: a.categoryColor || '#3b82f6',
-      }))
-    : [];
 
   useEffect(() => {
     dispatch(fetchTimetableData());
@@ -27,19 +19,31 @@ function Schedule() {
   if (error) return <div>Error: {error}</div>;
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: 4 }}>
-      <Box sx={{ flex: 1 }}>
-        {aides && aides.map(aide => (
-          <AideTimetable
-            key={aide.id}
-            aide={aide}
-            assignments={assignments.filter(a => a.aideId === aide.id)}
-            absences={absences.filter(abs => abs.aideId === aide.id)}
-          />
-        ))}
+    <DndProvider backend={HTML5Backend}>
+      <Box sx={{ p: 3, display: 'flex', gap: 4, minHeight: '100vh' }}>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="h4" sx={{ mb: 3 }}>Schedule</Typography>
+          {aides && aides.length > 0 ? (
+            aides.map(aide => (
+              <AideTimetable
+                key={aide.id}
+                aide={aide}
+                assignments={assignments.filter(a => a.aideId === aide.id)}
+                absences={absences.filter(abs => abs.aideId === aide.id)}
+              />
+            ))
+          ) : (
+            <Paper sx={{ p: 3, textAlign: 'center' }}>
+              <Typography>No teacher aides found</Typography>
+            </Paper>
+          )}
+        </Box>
+        <Box sx={{ width: 300, flexShrink: 0 }}>
+          <Typography variant="h6" sx={{ mb: 2 }}>Unassigned Tasks</Typography>
+          <UnassignedTaskList />
+        </Box>
       </Box>
-      <UnassignedTasks tasks={unassignedTasks} />
-    </Box>
+    </DndProvider>
   );
 }
 

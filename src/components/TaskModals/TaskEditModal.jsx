@@ -1,0 +1,315 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Box,
+  Typography,
+  Alert,
+  CircularProgress,
+} from '@mui/material';
+import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import RecurrenceOptions from './RecurrenceOptions';
+import { validateTaskForm } from './validation';
+import { updateTask, getClassrooms, previewRecurringTask } from '../../services/taskService';
+
+const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
+  const [formData, setFormData] = useState({
+    title: '',
+    category: '',
+    startTime: null,
+    endTime: null,
+    classroomId: '',
+    notes: '',
+    isRecurring: false,
+    selectedDays: [],
+    expiresOn: null,
+  });
+
+  const [errors, setErrors] = useState({});
+  const [classrooms, setClassrooms] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+  const [apiError, setApiError] = useState(null);
+
+  useEffect(() => {
+    const fetchClassrooms = async () => {
+      try {
+        const data = await getClassrooms();
+        setClassrooms(data);
+      } catch (error) {
+        setApiError('Failed to load classrooms');
+      }
+    };
+
+    if (open) {
+      fetchClassrooms();
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (task) {
+      const recurrenceRule = task.recurrence_rule ? JSON.parse(task.recurrence_rule) : null;
+      setFormData({
+        title: task.title || '',
+        category: task.category || '',
+        startTime: task.start_time ? new Date(`2000-01-01T${task.start_time}`) : null,
+        endTime: task.end_time ? new Date(`2000-01-01T${task.end_time}`) : null,
+        classroomId: task.classroom_id || '',
+        notes: task.notes || '',
+        isRecurring: !!recurrenceRule,
+        selectedDays: recurrenceRule?.days || [],
+        expiresOn: recurrenceRule?.expires_on ? new Date(recurrenceRule.expires_on) : null,
+      });
+    }
+  }, [task]);
+
+  const handleChange = (field) => (event) => {
+    setFormData({
+      ...formData,
+      [field]: event.target.value,
+    });
+    // Clear error when field is modified
+    if (errors[field]) {
+      setErrors({ ...errors, [field]: null });
+    }
+  };
+
+  const handleTimeChange = (field) => (newValue) => {
+    setFormData({
+      ...formData,
+      [field]: newValue,
+    });
+    // Clear error when field is modified
+    if (errors[field]) {
+      setErrors({ ...errors, [field]: null });
+    }
+  };
+
+  const handleRecurrenceChange = (newValue) => {
+    setFormData({
+      ...formData,
+      ...newValue,
+    });
+    // Clear error when field is modified
+    if (errors.selectedDays) {
+      setErrors({ ...errors, selectedDays: null });
+    }
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setApiError(null);
+    
+    // Validate form
+    const validationErrors = validateTaskForm(formData);
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Format the data for the API
+      const apiData = {
+        ...formData,
+        start_time: formData.startTime ? formData.startTime.toLocaleTimeString('en-US', { hour12: false }) : null,
+        end_time: formData.endTime ? formData.endTime.toLocaleTimeString('en-US', { hour12: false }) : null,
+        recurrence_rule: formData.isRecurring ? {
+          days: formData.selectedDays,
+          expires_on: formData.expiresOn ? formData.expiresOn.toISOString().split('T')[0] : null,
+        } : null,
+      };
+
+      const result = await updateTask(task.id, apiData);
+      onSubmit(result);
+      onClose();
+    } catch (error) {
+      setApiError(error.response?.data?.message || 'Failed to update task');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePreview = async () => {
+    if (!formData.isRecurring) return;
+
+    try {
+      const apiData = {
+        ...formData,
+        start_time: formData.startTime ? formData.startTime.toLocaleTimeString('en-US', { hour12: false }) : null,
+        end_time: formData.endTime ? formData.endTime.toLocaleTimeString('en-US', { hour12: false }) : null,
+        recurrence_rule: {
+          days: formData.selectedDays,
+          expires_on: formData.expiresOn ? formData.expiresOn.toISOString().split('T')[0] : null,
+        },
+      };
+
+      const preview = await previewRecurringTask(apiData);
+      setPreviewData(preview);
+    } catch (error) {
+      setApiError('Failed to generate preview');
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Edit Task</DialogTitle>
+      <form onSubmit={handleSubmit}>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {apiError && (
+              <Alert severity="error" onClose={() => setApiError(null)}>
+                {apiError}
+              </Alert>
+            )}
+
+            {task?.recurrence_rule && (
+              <Alert severity="warning">
+                Editing this task will affect all future occurrences. Consider creating a new task instead.
+              </Alert>
+            )}
+
+            <TextField
+              required
+              label="Task Title"
+              value={formData.title}
+              onChange={handleChange('title')}
+              error={!!errors.title}
+              helperText={errors.title}
+              fullWidth
+            />
+
+            <FormControl fullWidth required error={!!errors.category}>
+              <InputLabel>Category</InputLabel>
+              <Select
+                value={formData.category}
+                onChange={handleChange('category')}
+                label="Category"
+              >
+                <MenuItem value="TEACHING">Teaching</MenuItem>
+                <MenuItem value="SUPERVISION">Supervision</MenuItem>
+                <MenuItem value="MEETING">Meeting</MenuItem>
+                <MenuItem value="OTHER">Other</MenuItem>
+              </Select>
+              {errors.category && (
+                <Typography color="error" variant="caption">
+                  {errors.category}
+                </Typography>
+              )}
+            </FormControl>
+
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <TimePicker
+                  label="Start Time"
+                  value={formData.startTime}
+                  onChange={handleTimeChange('startTime')}
+                  sx={{ flex: 1 }}
+                  slotProps={{
+                    textField: {
+                      error: !!errors.startTime,
+                      helperText: errors.startTime,
+                    },
+                  }}
+                />
+                <TimePicker
+                  label="End Time"
+                  value={formData.endTime}
+                  onChange={handleTimeChange('endTime')}
+                  sx={{ flex: 1 }}
+                  slotProps={{
+                    textField: {
+                      error: !!errors.endTime,
+                      helperText: errors.endTime,
+                    },
+                  }}
+                />
+              </Box>
+            </LocalizationProvider>
+
+            <FormControl fullWidth>
+              <InputLabel>Classroom</InputLabel>
+              <Select
+                value={formData.classroomId}
+                onChange={handleChange('classroomId')}
+                label="Classroom"
+              >
+                {classrooms.map((classroom) => (
+                  <MenuItem key={classroom.id} value={classroom.id}>
+                    {classroom.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <TextField
+              label="Notes"
+              value={formData.notes}
+              onChange={handleChange('notes')}
+              multiline
+              rows={3}
+              fullWidth
+            />
+
+            <RecurrenceOptions
+              value={{
+                isRecurring: formData.isRecurring,
+                selectedDays: formData.selectedDays,
+                expiresOn: formData.expiresOn,
+              }}
+              onChange={handleRecurrenceChange}
+              error={errors.selectedDays}
+            />
+
+            {formData.isRecurring && (
+              <Button
+                variant="outlined"
+                onClick={handlePreview}
+                disabled={loading}
+                sx={{ mt: 1 }}
+              >
+                Preview Recurring Schedule
+              </Button>
+            )}
+
+            {previewData && (
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Preview of Next 4 Weeks:
+                </Typography>
+                {previewData.occurrences.map((occurrence, index) => (
+                  <Typography key={index} variant="body2">
+                    {new Date(occurrence.date).toLocaleDateString()} - {occurrence.start_time} to {occurrence.end_time}
+                  </Typography>
+                ))}
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            type="submit"
+            variant="contained"
+            color="primary"
+            disabled={loading}
+          >
+            {loading ? <CircularProgress size={24} /> : 'Save Changes'}
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+  );
+};
+
+export default TaskEditModal; 

@@ -155,85 +155,55 @@ def create_absence(session, aides):
     today = date.today()
     absence = Absence(
         aide_id=aides[0].id,  # First aide
-        date=today + timedelta(days=1),  # Tomorrow
+        start_date=today + timedelta(days=1),  # Tomorrow
+        end_date=today + timedelta(days=1),    # Same day for single-day absence
         reason="Medical appointment"
     )
     session.add(absence)
     session.commit()
+
+def clear_database(session):
+    """Clear all existing data from the database."""
+    try:
+        session.query(Absence).delete()
+        session.query(Assignment).delete()
+        session.query(Task).delete()
+        session.query(Availability).delete()
+        session.query(TeacherAide).delete()
+        session.query(Classroom).delete()
+        session.commit()
+        logger.info("Database cleared successfully!")
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error clearing database: {e}")
+        raise
 
 def seed_database():
     """Seed the database with sample data."""
     session = get_session()
     
     try:
-        # Create sample teacher aides
-        aides = [
-            TeacherAide(name="John Smith", colour_hex="#4CAF50"),
-            TeacherAide(name="Jane Doe", colour_hex="#2196F3"),
-            TeacherAide(name="Bob Wilson", colour_hex="#FFC107"),
-        ]
-        session.add_all(aides)
-        session.flush()
-        
-        # Create sample classroom
-        classroom = Classroom(name="Room 101", capacity=30)
-        session.add(classroom)
-        session.flush()
-        
-        # Create sample tasks
-        tasks = [
-            Task(
-                title="Math Support",
-                category="Academic",
-                start_time=time(9, 0),
-                end_time=time(10, 0),
-                classroom_id=classroom.id,
-                status="ASSIGNED"
-            ),
-            Task(
-                title="Reading Group",
-                category="Academic",
-                start_time=time(11, 0),
-                end_time=time(12, 0),
-                classroom_id=classroom.id,
-                status="ASSIGNED"
-            ),
-        ]
-        session.add_all(tasks)
-        session.flush()
-        
-        # Create sample assignments
-        today = date.today()
-        assignments = [
-            Assignment(
-                task_id=tasks[0].id,
-                aide_id=aides[0].id,
-                date=today,
-                start_time=time(9, 0),
-                end_time=time(10, 0),
-                status="ASSIGNED"
-            ),
-            Assignment(
-                task_id=tasks[1].id,
-                aide_id=aides[1].id,
-                date=today,
-                start_time=time(11, 0),
-                end_time=time(12, 0),
-                status="ASSIGNED"
-            ),
-        ]
-        session.add_all(assignments)
-        
-        # Create sample absence
-        absence = Absence(
-            aide_id=aides[2].id,
-            start_date=today,
-            end_date=today,
-            reason="Sick leave"
-        )
-        session.add(absence)
-        
-        session.commit()
+        # Clear existing data first
+        clear_database(session)
+
+        # Create teacher aides
+        aides = create_teacher_aides(session)
+
+        # Create availabilities for aides
+        create_availabilities(session, aides)
+
+        # Create classrooms
+        classrooms = create_classrooms(session)
+
+        # Create tasks
+        tasks = create_tasks(session, classrooms)
+
+        # Create assignments
+        create_assignments(session, tasks, aides)
+
+        # Create a sample absence
+        create_absence(session, aides)
+
         logger.info("Database seeded successfully!")
         
     except Exception as e:

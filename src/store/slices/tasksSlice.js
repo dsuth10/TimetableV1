@@ -5,7 +5,7 @@ export const fetchTasks = createAsyncThunk(
   'tasks/fetchTasks',
   async () => {
     const response = await taskAPI.getAll();
-    return response.data;
+    return response.data.tasks;
   }
 );
 
@@ -16,7 +16,11 @@ const tasksSlice = createSlice({
     status: 'idle',
     error: null,
   },
-  reducers: {},
+  reducers: {
+    addTask: (state, action) => {
+      state.items.push(action.payload);
+    },
+  },
   extraReducers: (builder) => {
     builder
       .addCase(fetchTasks.pending, (state) => {
@@ -33,4 +37,5 @@ const tasksSlice = createSlice({
   },
 });
 
+export const { addTask } = tasksSlice.actions;
 export default tasksSlice.reducer; 
