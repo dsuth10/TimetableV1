@@ -25,6 +25,11 @@ def create_app(engine=None):
     from api.db import init_db
     with app.app_context():
         init_db()
+        logger.debug("Database initialized")
+    # Print registered routes for debugging
+    logger.debug("Registered routes:")
+    for rule in app.url_map.iter_rules():
+        logger.debug(f"{rule.endpoint}: {rule.rule}")
     return app
 
 # Initialize database

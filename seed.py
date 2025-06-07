@@ -133,7 +133,7 @@ def create_assignments(session, tasks, aides):
     
     # Create assignments for each task
     for task in tasks:
-        assignments = task.generate_assignments(start_date, end_date)
+        assignments = task.generate_assignments(start_date, end_date, session)
         for assignment in assignments:
             # Assign to a random aide if available
             for aide in aides:

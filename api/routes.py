@@ -1,26 +1,34 @@
 from flask import Blueprint, jsonify, request, abort
 from flask_restful import Api, Resource
-from sqlalchemy.orm import scoped_session
-from api.models import TeacherAide, Availability, Task, Assignment, Classroom
+from sqlalchemy.orm import scoped_session, joinedload
+from api.models import TeacherAide, Availability, Task, Assignment, Classroom, Absence
 from api.db import get_db
 from datetime import time, date, datetime, timedelta
 from dateutil.rrule import rrulestr
 from typing import Optional
-from sqlalchemy import func
+from sqlalchemy import func, or_, and_
 import logging
+from api.recurrence import extend_assignment_horizon, DEFAULT_HORIZON_WEEKS
+from sqlalchemy.orm.exc import DetachedInstanceError
+from api.constants import Status
 
 api_bp = Blueprint('api', __name__)
 api = Api(api_bp)
 
 logger = logging.getLogger(__name__)
 
-def error_response(code: str, message: str, status_code: int = 400):
-    return {
-        "error": {
-            "code": code,
-            "message": message
-        }
-    }, status_code
+def error_response(code: str, message: str, status: int) -> tuple[dict, int]:
+    """Return a standardized error response.
+    
+    Args:
+        code: Error code (e.g. 'VALIDATION_ERROR', 'NOT_FOUND')
+        message: Human-readable error message
+        status: HTTP status code
+        
+    Returns:
+        Tuple of (error response dict, status code)
+    """
+    return {'error': {'code': code, 'message': message}}, status
 
 # Utility: serialize models
 
@@ -60,7 +68,35 @@ def serialize_task(task):
         'updated_at': task.updated_at.isoformat() if task.updated_at else None
     }
 
-def serialize_assignment(assignment):
+def serialize_assignment(assignment, task_title=None):
+    """Serialize an Assignment instance to a dictionary.
+    
+    Args:
+        assignment: The Assignment instance to serialize
+        task_title: Optional task title to use instead of loading from relationship
+        
+    Returns:
+        Dictionary containing the serialized assignment data
+    """
+    # Always use provided task_title if given
+    if task_title is not None:
+        resolved_task_title = task_title
+    else:
+        # Defensive: check if assignment.task is loaded and not detached
+        try:
+            resolved_task_title = assignment.task.title if assignment.task else None
+        except (DetachedInstanceError, AttributeError):
+            resolved_task_title = None
+            
+    # Safely handle datetime fields
+    created_at = None
+    updated_at = None
+    try:
+        created_at = assignment.created_at.isoformat() if assignment.created_at else None
+        updated_at = assignment.updated_at.isoformat() if assignment.updated_at else None
+    except (DetachedInstanceError, AttributeError):
+        pass
+        
     return {
         'id': assignment.id,
         'task_id': assignment.task_id,
@@ -69,8 +105,18 @@ def serialize_assignment(assignment):
         'start_time': assignment.start_time.strftime('%H:%M'),
         'end_time': assignment.end_time.strftime('%H:%M'),
         'status': assignment.status,
-        'created_at': assignment.created_at.isoformat() if assignment.created_at else None,
-        'updated_at': assignment.updated_at.isoformat() if assignment.updated_at else None
+        'task_title': resolved_task_title,
+        'created_at': created_at,
+        'updated_at': updated_at
+    }
+
+def serialize_absence(absence):
+    return {
+        'id': absence.id,
+        'aide_id': absence.aide_id,
+        'date': absence.date.isoformat(),
+        'reason': absence.reason,
+        'created_at': absence.created_at.isoformat() if absence.created_at else None
     }
 
 # --- Task Endpoints ---
@@ -124,6 +170,7 @@ class TaskListResource(Resource):
             return error_response('INTERNAL_ERROR', str(e), 500)
 
     def post(self):
+        """Create a new task."""
         session = next(get_db())
         try:
             data = request.get_json(force=True)
@@ -148,6 +195,16 @@ class TaskListResource(Resource):
             if start_time >= end_time:
                 return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
             
+            # Validate recurrence rule if provided
+            recurrence_rule = data.get('recurrence_rule')
+            if recurrence_rule:
+                try:
+                    start_date = date.today()
+                    dt_start = datetime.combine(start_date, start_time)
+                    rrulestr(recurrence_rule, dtstart=dt_start)
+                except ValueError as e:
+                    return error_response('VALIDATION_ERROR', f'Invalid recurrence rule: {str(e)}', 422)
+            
             # Validate classroom if provided
             classroom_id = data.get('classroom_id')
             if classroom_id:
@@ -165,26 +222,33 @@ class TaskListResource(Resource):
                 expires_on=date.fromisoformat(data['expires_on']) if data.get('expires_on') else None,
                 classroom_id=classroom_id,
                 notes=data.get('notes'),
-                status='UNASSIGNED'
+                status=data.get('status', 'UNASSIGNED')
             )
-            
             session.add(task)
-            session.commit()
+            session.flush()  # Get the task ID without committing
             
-            # Generate assignments if recurrence rule is provided
+            # Generate assignments if this is a recurring task
+            assignments_created = 0
             if task.recurrence_rule:
                 try:
+                    # Generate assignments for the next 4 weeks
                     start_date = date.today()
-                    end_date = task.expires_on if task.expires_on else (start_date + timedelta(weeks=4))
-                    assignments = task.generate_assignments(start_date, end_date)
-                    session.add_all(assignments)
-                    session.commit()
+                    end_date = start_date + timedelta(weeks=4)
+                    assignments = task.generate_assignments(start_date, end_date, session)
+                    assignments_created = len(assignments)
                 except Exception as e:
                     session.rollback()
                     return error_response('VALIDATION_ERROR', f'Invalid recurrence rule: {str(e)}', 422)
             
-            result = serialize_task(task)
+            session.commit()
+            # Fetch all assignments for this task with task eagerly loaded
+            assignments = session.query(Assignment).options(joinedload(Assignment.task)).filter(Assignment.task_id == task.id).all()
+            result = {
+                "task": serialize_task(task),
+                "assignments": [serialize_assignment(a) for a in assignments]
+            }
             return result, 201
+            
         except Exception as e:
             session.rollback()
             return error_response('INTERNAL_ERROR', str(e), 500)
@@ -196,75 +260,24 @@ class TaskResource(Resource):
             task = session.get(Task, task_id)
             if not task:
                 return error_response('NOT_FOUND', 'Task not found', 404)
-            result = serialize_task(task)
-            return result, 200
+            return {"task": serialize_task(task)}, 200
         except Exception as e:
             return error_response('INTERNAL_ERROR', str(e), 500)
 
     def put(self, task_id):
+        """Update a task and handle recurrence changes."""
         session = next(get_db())
         try:
-            data = request.get_json(force=True)
             task = session.get(Task, task_id)
             if not task:
                 return error_response('NOT_FOUND', 'Task not found', 404)
-            # Replace all updatable fields
-            task.title = data.get('title', task.title)
-            if 'category' in data:
-                if data['category'] not in ['PLAYGROUND', 'CLASS_SUPPORT', 'GROUP_SUPPORT', 'INDIVIDUAL_SUPPORT']:
-                    return error_response('VALIDATION_ERROR', 'Invalid category', 422)
-                task.category = data['category']
-            if 'start_time' in data:
-                try:
-                    task.start_time = time.fromisoformat(data['start_time'])
-                except ValueError:
-                    return error_response('VALIDATION_ERROR', 'Invalid start_time format. Use HH:MM', 422)
-            if 'end_time' in data:
-                try:
-                    task.end_time = time.fromisoformat(data['end_time'])
-                except ValueError:
-                    return error_response('VALIDATION_ERROR', 'Invalid end_time format. Use HH:MM', 422)
-            if task.start_time >= task.end_time:
-                return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
-            if 'recurrence_rule' in data:
-                task.recurrence_rule = data['recurrence_rule']
-            if 'expires_on' in data:
-                try:
-                    task.expires_on = date.fromisoformat(data['expires_on'])
-                except ValueError:
-                    return error_response('VALIDATION_ERROR', 'Invalid expires_on format. Use YYYY-MM-DD', 422)
-            if 'classroom_id' in data:
-                if data['classroom_id']:
-                    classroom = session.get(Classroom, data['classroom_id'])
-                    if not classroom:
-                        return error_response('NOT_FOUND', 'Classroom not found', 404)
-                task.classroom_id = data['classroom_id']
-            if 'notes' in data:
-                task.notes = data['notes']
-            if 'status' in data:
-                if data['status'] not in ['UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETE']:
-                    return error_response('VALIDATION_ERROR', 'Invalid status', 422)
-                task.status = data['status']
-            session.commit()
-            result = serialize_task(task)
-            return result, 200
-        except Exception as e:
-            session.rollback()
-            return error_response('INTERNAL_ERROR', str(e), 500)
 
-    def patch(self, task_id):
-        session = next(get_db())
-        try:
             data = request.get_json(force=True)
-            task = session.get(Task, task_id)
-            if not task:
-                return error_response('NOT_FOUND', 'Task not found', 404)
-            # Update fields if provided
+
+            # Update basic fields
             if 'title' in data:
                 task.title = data['title']
             if 'category' in data:
-                if data['category'] not in ['PLAYGROUND', 'CLASS_SUPPORT', 'GROUP_SUPPORT', 'INDIVIDUAL_SUPPORT']:
-                    return error_response('VALIDATION_ERROR', 'Invalid category', 422)
                 task.category = data['category']
             if 'start_time' in data:
                 try:
@@ -276,66 +289,62 @@ class TaskResource(Resource):
                     task.end_time = time.fromisoformat(data['end_time'])
                 except ValueError:
                     return error_response('VALIDATION_ERROR', 'Invalid end_time format. Use HH:MM', 422)
-            if task.start_time >= task.end_time:
-                return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
-            recurrence_rule_updated = False
-            if 'recurrence_rule' in data:
-                task.recurrence_rule = data['recurrence_rule']
-                recurrence_rule_updated = True
+            if 'notes' in data:
+                task.notes = data['notes']
             if 'expires_on' in data:
                 try:
                     task.expires_on = date.fromisoformat(data['expires_on'])
                 except ValueError:
                     return error_response('VALIDATION_ERROR', 'Invalid expires_on format. Use YYYY-MM-DD', 422)
             if 'classroom_id' in data:
-                if data['classroom_id']:
-                    classroom = session.get(Classroom, data['classroom_id'])
-                    if not classroom:
-                        return error_response('NOT_FOUND', 'Classroom not found', 404)
                 task.classroom_id = data['classroom_id']
-            if 'notes' in data:
-                task.notes = data['notes']
-            if 'status' in data:
-                if data['status'] not in ['UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETE']:
-                    return error_response('VALIDATION_ERROR', 'Invalid status', 422)
-                task.status = data['status']
+
+            # Handle recurrence rule changes
+            if 'recurrence_rule' in data:
+                old_rule = task.recurrence_rule
+                task.recurrence_rule = data['recurrence_rule']
+
+                # If recurrence rule changed, regenerate assignments
+                if old_rule != task.recurrence_rule:
+                    # Delete future assignments
+                    session.query(Assignment).filter(
+                        Assignment.task_id == task.id,
+                        Assignment.date >= date.today()
+                    ).delete()
+
+                    # Generate new assignments if recurring
+                    if task.recurrence_rule:
+                        start_date = date.today()
+                        end_date = start_date + timedelta(weeks=4)
+                        assignments = task.generate_assignments(start_date, end_date, session)
+                    else:
+                        assignments = []
+
             session.commit()
-            # Regenerate assignments if recurrence rule is updated
-            if recurrence_rule_updated:
-                try:
-                    # Delete old assignments for this task
-                    session.query(Assignment).filter(Assignment.task_id == task_id).delete()
-                    session.commit()
-                    # Refresh the task object from the session
-                    session.refresh(task)
-                    start_date = date.today()
-                    end_date = task.expires_on if task.expires_on else (start_date + timedelta(weeks=4))
-                    assignments = task.generate_assignments(start_date, end_date)
-                    # Ensure task_id is set correctly
-                    for a in assignments:
-                        a.task_id = task.id
-                    session.add_all(assignments)
-                    session.commit()
-                except Exception as e:
-                    session.rollback()
-                    return error_response('VALIDATION_ERROR', f'Invalid recurrence rule: {str(e)}', 422)
-            result = serialize_task(task)
-            return result, 200
+            # Fetch all assignments for this task with task eagerly loaded
+            assignments = session.query(Assignment).options(joinedload(Assignment.task)).filter(Assignment.task_id == task.id).all()
+            return {
+                'task': serialize_task(task),
+                'assignments': [serialize_assignment(a) for a in assignments]
+            }, 200
+
         except Exception as e:
             session.rollback()
             return error_response('INTERNAL_ERROR', str(e), 500)
 
     def delete(self, task_id):
+        """Delete a task and its future assignments."""
         session = next(get_db())
         try:
             task = session.get(Task, task_id)
             if not task:
                 return error_response('NOT_FOUND', 'Task not found', 404)
             
-            # Delete all future assignments
+            # Delete future unstarted assignments
             future_assignments = session.query(Assignment).filter(
-                Assignment.task_id == task_id,
-                Assignment.date >= date.today()
+                Assignment.task_id == task.id,
+                Assignment.date >= date.today(),
+                Assignment.status == 'UNASSIGNED'
             ).all()
             for assignment in future_assignments:
                 session.delete(assignment)
@@ -344,6 +353,7 @@ class TaskResource(Resource):
             session.delete(task)
             session.commit()
             return '', 204
+            
         except Exception as e:
             session.rollback()
             return error_response('INTERNAL_ERROR', str(e), 500)
@@ -353,262 +363,727 @@ class TaskResource(Resource):
 class TeacherAideListResource(Resource):
     def get(self):
         session = next(get_db())
-        aides = session.query(TeacherAide).all()
-        result = [serialize_aide(a) for a in aides]
-        return result, 200
+        try:
+            aides = session.query(TeacherAide).all()
+            return [serialize_aide(aide) for aide in aides], 200
+        except Exception as e:
+            return error_response('INTERNAL_ERROR', str(e), 500)
 
     def post(self):
-        data = request.get_json(force=True)
-        # Validation
-        if not data.get('name') or not data.get('colour_hex'):
-            return {'error': 'Missing required fields: name, colour_hex'}, 400
-        if not isinstance(data['colour_hex'], str) or not data['colour_hex'].startswith('#') or len(data['colour_hex']) != 7:
-            return {'error': 'colour_hex must be a string like #RRGGBB'}, 400
         session = next(get_db())
-        aide = TeacherAide(
-            name=data['name'],
-            qualifications=data.get('qualifications', ''),
-            colour_hex=data['colour_hex']
-        )
-        session.add(aide)
-        session.commit()
-        result = serialize_aide(aide)
-        return result, 201
+        try:
+            data = request.get_json(force=True)
+            
+            # Validate required fields
+            if 'name' not in data:
+                return error_response('VALIDATION_ERROR', 'Missing required field: name', 422)
+            
+            # Validate colour_hex if provided
+            if 'colour_hex' in data:
+                if not data['colour_hex'].startswith('#') or len(data['colour_hex']) != 7:
+                    return error_response('VALIDATION_ERROR', 'Invalid colour_hex format. Use #RRGGBB', 422)
+            
+            # Create aide
+            aide = TeacherAide(
+                name=data['name'],
+                qualifications=data.get('qualifications'),
+                colour_hex=data.get('colour_hex', '#000000')
+            )
+            session.add(aide)
+            session.commit()
+            
+            return serialize_aide(aide), 201
+            
+        except Exception as e:
+            session.rollback()
+            return error_response('INTERNAL_ERROR', str(e), 500)
 
 class TeacherAideResource(Resource):
     def get(self, aide_id):
         session = next(get_db())
-        aide = session.get(TeacherAide, aide_id)
-        if not aide:
-            return {'error': 'Not found'}, 404
-        result = serialize_aide(aide)
-        return result, 200
+        try:
+            aide = session.get(TeacherAide, aide_id)
+            if not aide:
+                return error_response('NOT_FOUND', 'Teacher aide not found', 404)
+            return serialize_aide(aide), 200
+        except Exception as e:
+            return error_response('INTERNAL_ERROR', str(e), 500)
 
     def put(self, aide_id):
-        data = request.get_json(force=True)
         session = next(get_db())
-        aide = session.get(TeacherAide, aide_id)
-        if not aide:
-            return {'error': 'Not found'}, 404
-        if 'name' in data:
-            aide.name = data['name']
-        if 'qualifications' in data:
-            aide.qualifications = data['qualifications']
-        if 'colour_hex' in data:
-            if not isinstance(data['colour_hex'], str) or not data['colour_hex'].startswith('#') or len(data['colour_hex']) != 7:
-                return {'error': 'colour_hex must be a string like #RRGGBB'}, 400
-            aide.colour_hex = data['colour_hex']
-        session.commit()
-        result = serialize_aide(aide)
-        return result, 200
+        try:
+            aide = session.get(TeacherAide, aide_id)
+            if not aide:
+                return error_response('NOT_FOUND', 'Teacher aide not found', 404)
+            
+            data = request.get_json(force=True)
+            
+            # Update fields
+            if 'name' in data:
+                aide.name = data['name']
+            if 'qualifications' in data:
+                aide.qualifications = data['qualifications']
+            if 'colour_hex' in data:
+                if not data['colour_hex'].startswith('#') or len(data['colour_hex']) != 7:
+                    return error_response('VALIDATION_ERROR', 'Invalid colour_hex format. Use #RRGGBB', 422)
+                aide.colour_hex = data['colour_hex']
+            
+            session.commit()
+            return serialize_aide(aide), 200
+            
+        except Exception as e:
+            session.rollback()
+            return error_response('INTERNAL_ERROR', str(e), 500)
 
     def delete(self, aide_id):
         session = next(get_db())
-        aide = session.get(TeacherAide, aide_id)
-        if not aide:
-            return {'error': 'Not found'}, 404
-        session.delete(aide)
-        session.commit()
-        return '', 204
+        try:
+            aide = session.get(TeacherAide, aide_id)
+            if not aide:
+                return error_response('NOT_FOUND', 'Teacher aide not found', 404)
+            
+            # Check for existing assignments
+            assignments = session.query(Assignment).filter(Assignment.aide_id == aide_id).first()
+            if assignments:
+                return error_response('CONFLICT', 'Cannot delete aide with existing assignments', 409)
+            
+            # Delete availability records
+            session.query(Availability).filter(Availability.aide_id == aide_id).delete()
+            
+            # Delete the aide
+            session.delete(aide)
+            session.commit()
+            return '', 204
+            
+        except Exception as e:
+            session.rollback()
+            return error_response('INTERNAL_ERROR', str(e), 500)
 
 # --- Availability Endpoints ---
 
 class AvailabilityListResource(Resource):
     def get(self, aide_id):
         session = next(get_db())
-        aide = session.get(TeacherAide, aide_id)
-        if not aide:
-            return {'error': 'Aide not found'}, 404
-        result = [serialize_availability(a) for a in aide.availabilities]
-        return result, 200
+        try:
+            aide = session.get(TeacherAide, aide_id)
+            if not aide:
+                return error_response('NOT_FOUND', 'Teacher aide not found', 404)
+            
+            availabilities = session.query(Availability).filter(Availability.aide_id == aide_id).all()
+            return [serialize_availability(avail) for avail in availabilities], 200
+        except Exception as e:
+            return error_response('INTERNAL_ERROR', str(e), 500)
 
     def post(self, aide_id):
-        data = request.get_json(force=True)
         session = next(get_db())
-        aide = session.get(TeacherAide, aide_id)
-        if not aide:
-            return {'error': 'Aide not found'}, 404
-        # Validate input
-        weekday = data.get('weekday')
-        start_time = data.get('start_time')
-        end_time = data.get('end_time')
-        if weekday not in ['MO', 'TU', 'WE', 'TH', 'FR']:
-            return {'error': 'weekday must be one of MO, TU, WE, TH, FR'}, 400
         try:
-            st = time.fromisoformat(start_time)
-            et = time.fromisoformat(end_time)
-        except Exception:
-            return {'error': 'start_time and end_time must be in HH:MM format'}, 400
-        if st >= et or st < time(8,0) or et > time(16,0):
-            return {'error': 'start_time must be before end_time and within 08:00-16:00'}, 400
-        # Check for unique constraint
-        existing = session.query(Availability).filter_by(aide_id=aide_id, weekday=weekday).first()
-        if existing:
-            return {'error': 'Availability for this weekday already exists'}, 400
-        avail = Availability(
-            aide_id=aide_id,
-            weekday=weekday,
-            start_time=st,
-            end_time=et
-        )
-        session.add(avail)
-        session.commit()
-        result = serialize_availability(avail)
-        return result, 201
+            aide = session.get(TeacherAide, aide_id)
+            if not aide:
+                return error_response('NOT_FOUND', 'Teacher aide not found', 404)
+            
+            data = request.get_json(force=True)
+            
+            # Validate required fields
+            required_fields = ['weekday', 'start_time', 'end_time']
+            for field in required_fields:
+                if field not in data:
+                    return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
+            
+            # Validate weekday
+            if data['weekday'] not in ['MO', 'TU', 'WE', 'TH', 'FR']:
+                return error_response('VALIDATION_ERROR', 'Invalid weekday. Use MO, TU, WE, TH, FR', 422)
+            
+            # Validate times
+            try:
+                start_time = time.fromisoformat(data['start_time'])
+                end_time = time.fromisoformat(data['end_time'])
+            except ValueError:
+                return error_response('VALIDATION_ERROR', 'Invalid time format. Use HH:MM', 422)
+            
+            if start_time >= end_time:
+                return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
+            
+            # Check for time range
+            if start_time < time(8, 0) or end_time > time(16, 0):
+                return error_response('VALIDATION_ERROR', 'Times must be between 08:00 and 16:00', 422)
+            
+            # Check for duplicate weekday
+            existing = session.query(Availability).filter(
+                Availability.aide_id == aide_id,
+                Availability.weekday == data['weekday']
+            ).first()
+            if existing:
+                return error_response('CONFLICT', 'Availability already exists for this weekday', 409)
+            
+            # Create availability
+            availability = Availability(
+                aide_id=aide_id,
+                weekday=data['weekday'],
+                start_time=start_time,
+                end_time=end_time
+            )
+            session.add(availability)
+            session.commit()
+            
+            return serialize_availability(availability), 201
+            
+        except Exception as e:
+            session.rollback()
+            return error_response('INTERNAL_ERROR', str(e), 500)
 
 class AvailabilityResource(Resource):
     def put(self, aide_id, avail_id):
-        data = request.get_json(force=True)
         session = next(get_db())
-        avail = session.query(Availability).filter_by(id=avail_id, aide_id=aide_id).first()
-        if not avail:
-            return {'error': 'Availability not found'}, 404
-        if 'weekday' in data:
-            if data['weekday'] not in ['MO', 'TU', 'WE', 'TH', 'FR']:
-                return {'error': 'weekday must be one of MO, TU, WE, TH, FR'}, 400
-            avail.weekday = data['weekday']
-        if 'start_time' in data:
-            try:
-                st = time.fromisoformat(data['start_time'])
-            except Exception:
-                return {'error': 'start_time must be in HH:MM format'}, 400
-            avail.start_time = st
-        if 'end_time' in data:
-            try:
-                et = time.fromisoformat(data['end_time'])
-            except Exception:
-                return {'error': 'end_time must be in HH:MM format'}, 400
-            avail.end_time = et
-        if avail.start_time >= avail.end_time or avail.start_time < time(8,0) or avail.end_time > time(16,0):
-            return {'error': 'start_time must be before end_time and within 08:00-16:00'}, 400
-        session.commit()
-        result = serialize_availability(avail)
-        return result, 200
+        try:
+            aide = session.get(TeacherAide, aide_id)
+            if not aide:
+                return error_response('NOT_FOUND', 'Teacher aide not found', 404)
+            
+            availability = session.get(Availability, avail_id)
+            if not availability or availability.aide_id != aide_id:
+                return error_response('NOT_FOUND', 'Availability not found', 404)
+            
+            data = request.get_json(force=True)
+            
+            # Update times if provided
+            if 'start_time' in data:
+                try:
+                    availability.start_time = time.fromisoformat(data['start_time'])
+                except ValueError:
+                    return error_response('VALIDATION_ERROR', 'Invalid start_time format. Use HH:MM', 422)
+            
+            if 'end_time' in data:
+                try:
+                    availability.end_time = time.fromisoformat(data['end_time'])
+                except ValueError:
+                    return error_response('VALIDATION_ERROR', 'Invalid end_time format. Use HH:MM', 422)
+            
+            # Validate time range
+            if availability.start_time >= availability.end_time:
+                return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
+            
+            if availability.start_time < time(8, 0) or availability.end_time > time(16, 0):
+                return error_response('VALIDATION_ERROR', 'Times must be between 08:00 and 16:00', 422)
+            
+            session.commit()
+            return serialize_availability(availability), 200
+            
+        except Exception as e:
+            session.rollback()
+            return error_response('INTERNAL_ERROR', str(e), 500)
 
     def delete(self, aide_id, avail_id):
         session = next(get_db())
-        avail = session.query(Availability).filter_by(id=avail_id, aide_id=aide_id).first()
-        if not avail:
-            return {'error': 'Availability not found'}, 404
-        session.delete(avail)
-        session.commit()
-        return '', 204
+        try:
+            aide = session.get(TeacherAide, aide_id)
+            if not aide:
+                return error_response('NOT_FOUND', 'Teacher aide not found', 404)
+            
+            availability = session.get(Availability, avail_id)
+            if not availability or availability.aide_id != aide_id:
+                return error_response('NOT_FOUND', 'Availability not found', 404)
+            
+            session.delete(availability)
+            session.commit()
+            return '', 204
+            
+        except Exception as e:
+            session.rollback()
+            return error_response('INTERNAL_ERROR', str(e), 500)
 
 # --- Assignment Endpoints ---
 
 class AssignmentListResource(Resource):
     def get(self):
+        """Get all assignments with filtering."""
         session = next(get_db())
         try:
-            # Get filter parameters
-            week = request.args.get('week')  # Format: YYYY-WW
-            aide_id = request.args.get('aide_id')
-            status = request.args.get('status')
-            page = int(request.args.get('page', 1))
-            per_page = int(request.args.get('per_page', 20))
+            # Build query with eager loading
+            query = session.query(Assignment).options(
+                joinedload(Assignment.task),
+                joinedload(Assignment.aide)
+            )
             
-            # Build query
-            query = session.query(Assignment)
-            
-            if week:
+            # Apply filters
+            if 'week' in request.args:
                 try:
-                    year, week_num = map(int, week.split('-'))
-                    # Calculate start and end dates for the week
+                    week = request.args['week']
+                    year, week_num = map(int, week.split('-W'))
                     start_date = date.fromisocalendar(year, week_num, 1)
                     end_date = date.fromisocalendar(year, week_num, 7)
                     query = query.filter(Assignment.date.between(start_date, end_date))
-                except ValueError:
+                except (ValueError, IndexError):
                     return error_response('VALIDATION_ERROR', 'Invalid week format. Use YYYY-WW', 422)
             
-            if aide_id:
-                query = query.filter(Assignment.aide_id == aide_id)
-            if status:
+            if 'status' in request.args:
+                status = request.args['status'].upper()
+                if status not in [s.value for s in Status]:
+                    return error_response('VALIDATION_ERROR', f'Invalid status: {status}', 422)
                 query = query.filter(Assignment.status == status)
             
-            # Get total count
-            total = query.count()
+            if 'start_date' in request.args:
+                try:
+                    start_date = date.fromisoformat(request.args['start_date'])
+                    query = query.filter(Assignment.date >= start_date)
+                except ValueError:
+                    return error_response('VALIDATION_ERROR', 'Invalid start_date format. Use YYYY-MM-DD', 422)
+            
+            if 'end_date' in request.args:
+                try:
+                    end_date = date.fromisoformat(request.args['end_date'])
+                    query = query.filter(Assignment.date <= end_date)
+                except ValueError:
+                    return error_response('VALIDATION_ERROR', 'Invalid end_date format. Use YYYY-MM-DD', 422)
+            
+            if 'aide_id' in request.args:
+                query = query.filter(Assignment.aide_id == request.args['aide_id'])
+            
+            if 'task_id' in request.args:
+                query = query.filter(Assignment.task_id == request.args['task_id'])
             
             # Apply pagination
-            assignments = query.offset((page - 1) * per_page).limit(per_page).all()
+            page = int(request.args.get('page', 1))
+            per_page = int(request.args.get('per_page', 50))
+            assignments = query.order_by(Assignment.date, Assignment.start_time).offset((page - 1) * per_page).limit(per_page).all()
             
-            result = {
-                "assignments": [serialize_assignment(assignment) for assignment in assignments],
-                "total": total,
-                "page": page,
-                "per_page": per_page
-            }
-            return result, 200
+            return {
+                'assignments': [serialize_assignment(a) for a in assignments],
+                'page': page,
+                'per_page': per_page,
+                'total': query.count()
+            }, 200
+            
         except Exception as e:
+            session.rollback()
             return error_response('INTERNAL_ERROR', str(e), 500)
-
+    
     def post(self):
-        logger.debug("Received POST request to /api/assignments")
+        """Create a new assignment."""
         session = next(get_db())
         try:
             data = request.get_json(force=True)
-            logger.debug(f"Request data: {data}")
+            
             # Validate required fields
             required_fields = ['task_id', 'date', 'start_time', 'end_time']
             for field in required_fields:
                 if field not in data:
-                    logger.error(f"Missing required field: {field}")
                     return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
-            # Validate task exists
-            task = session.get(Task, data['task_id'])
+            
+            # Validate task exists with eager loading
+            task = session.query(Task).options(
+                joinedload(Task.assignments)
+            ).get(data['task_id'])
             if not task:
-                logger.error(f"Task not found: {data['task_id']}")
                 return error_response('NOT_FOUND', 'Task not found', 404)
-            # Validate times
+            
+            # Validate aide if provided
+            aide = None
+            if 'aide_id' in data:
+                aide = session.query(TeacherAide).options(
+                    joinedload(TeacherAide.assignments)
+                ).get(data['aide_id'])
+                if not aide:
+                    return error_response('NOT_FOUND', 'Teacher aide not found', 404)
+            
+            # Validate date format
+            try:
+                assignment_date = date.fromisoformat(data['date'])
+            except ValueError:
+                return error_response('VALIDATION_ERROR', 'Invalid date format. Use YYYY-MM-DD', 422)
+            
+            # Validate time format
             try:
                 start_time = time.fromisoformat(data['start_time'])
                 end_time = time.fromisoformat(data['end_time'])
-                assignment_date = date.fromisoformat(data['date'])
             except ValueError:
-                logger.error("Invalid date/time format")
-                return error_response('VALIDATION_ERROR', 'Invalid date/time format', 422)
+                return error_response('VALIDATION_ERROR', 'Invalid time format. Use HH:MM', 422)
+            
             if start_time >= end_time:
-                logger.error("start_time must be before end_time")
                 return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
+            
+            # Check for conflicts if aide is assigned
+            if aide:
+                conflicts = session.query(Assignment).options(
+                    joinedload(Assignment.task),
+                    joinedload(Assignment.aide)
+                ).filter(
+                    Assignment.aide_id == aide.id,
+                    Assignment.date == assignment_date,
+                    or_(
+                        and_(Assignment.start_time <= start_time, start_time < Assignment.end_time),
+                        and_(Assignment.start_time < end_time, end_time <= Assignment.end_time),
+                        and_(start_time <= Assignment.start_time, Assignment.start_time < end_time)
+                    )
+                ).first()
+                
+                if conflicts:
+                    return error_response('CONFLICT', 'Teacher aide has a scheduling conflict', 409)
+            
             # Create assignment
             assignment = Assignment(
-                task_id=data['task_id'],
-                aide_id=data.get('aide_id'),
+                task_id=task.id,
+                aide_id=aide.id if aide else None,
                 date=assignment_date,
                 start_time=start_time,
                 end_time=end_time,
-                status='UNASSIGNED'
+                status=Status.ASSIGNED if aide else Status.UNASSIGNED
             )
-            # Check for conflicts if aide is assigned
-            if assignment.aide_id:
-                conflicts = assignment.check_conflicts(session)
-                if conflicts:
-                    logger.debug(f"Conflicts found: {conflicts}")
-                    return error_response('CONFLICT', 'Assignment conflicts with existing assignments', 409)
+            
             session.add(assignment)
+            session.flush()  # Get ID without committing
+            
+            # Ensure relationships are loaded
+            session.refresh(assignment)
+            
+            # Commit the transaction
             session.commit()
-            logger.debug(f"Assignment created: {assignment}")
-            result = serialize_assignment(assignment)
-            return result, 201
+            
+            return serialize_assignment(assignment), 201
+            
         except Exception as e:
-            logger.error(f"Internal error: {str(e)}")
+            session.rollback()
+            return error_response('INTERNAL_ERROR', str(e), 500)
+
+class AssignmentResource(Resource):
+    def get(self, assignment_id):
+        """Get a single assignment by ID."""
+        session = next(get_db())
+        try:
+            assignment = session.query(Assignment).options(
+                joinedload(Assignment.task),
+                joinedload(Assignment.aide)
+            ).get(assignment_id)
+            
+            if not assignment:
+                return error_response('NOT_FOUND', 'Assignment not found', 404)
+            return serialize_assignment(assignment), 200
+        except Exception as e:
+            return error_response('INTERNAL_ERROR', str(e), 500)
+
+    def patch(self, assignment_id):
+        """Update an assignment."""
+        session = next(get_db())
+        try:
+            # Load assignment with relationships
+            assignment = session.query(Assignment).options(
+                joinedload(Assignment.task),
+                joinedload(Assignment.aide)
+            ).get(assignment_id)
+            
+            if not assignment:
+                return error_response('NOT_FOUND', 'Assignment not found', 404)
+            
+            data = request.get_json(force=True)
+            
+            # Update fields
+            if 'aide_id' in data:
+                if data['aide_id']:
+                    # Load aide with relationships
+                    aide = session.query(TeacherAide).options(
+                        joinedload(TeacherAide.assignments)
+                    ).get(data['aide_id'])
+                    if not aide:
+                        return error_response('NOT_FOUND', 'Teacher aide not found', 404)
+                assignment.aide_id = data['aide_id']
+            
+            if 'start_time' in data:
+                try:
+                    assignment.start_time = time.fromisoformat(data['start_time'])
+                except ValueError:
+                    return error_response('VALIDATION_ERROR', 'Invalid start_time format. Use HH:MM', 422)
+            
+            if 'end_time' in data:
+                try:
+                    assignment.end_time = time.fromisoformat(data['end_time'])
+                except ValueError:
+                    return error_response('VALIDATION_ERROR', 'Invalid end_time format. Use HH:MM', 422)
+            
+            if 'status' in data:
+                if data['status'] not in ['UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETE']:
+                    return error_response('VALIDATION_ERROR', 'Invalid status', 422)
+                assignment.status = data['status']
+            
+            # Validate times
+            if assignment.start_time >= assignment.end_time:
+                return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
+            
+            # Check for conflicts if aide or times changed
+            if 'aide_id' in data or 'start_time' in data or 'end_time' in data:
+                conflicts = session.query(Assignment).options(
+                    joinedload(Assignment.task)
+                ).filter(
+                    Assignment.id != assignment_id,
+                    Assignment.aide_id == assignment.aide_id,
+                    Assignment.date == assignment.date,
+                    or_(
+                        and_(Assignment.start_time <= assignment.start_time, assignment.start_time < Assignment.end_time),
+                        and_(Assignment.start_time < assignment.end_time, assignment.end_time <= Assignment.end_time),
+                        and_(assignment.start_time <= Assignment.start_time, Assignment.start_time < assignment.end_time)
+                    )
+                ).first()
+                
+                if conflicts:
+                    return error_response('CONFLICT', 'Assignment conflicts with existing assignment', 409)
+            
+            session.flush()  # Get updated state without committing
+            
+            # Reload assignment with relationships before committing
+            assignment = session.query(Assignment).options(
+                joinedload(Assignment.task),
+                joinedload(Assignment.aide)
+            ).get(assignment_id)
+            
+            session.commit()
+            return serialize_assignment(assignment), 200
+            
+        except Exception as e:
+            session.rollback()
+            return error_response('INTERNAL_ERROR', str(e), 500)
+
+    def delete(self, assignment_id):
+        """Delete an assignment."""
+        session = next(get_db())
+        try:
+            # Load assignment with relationships to ensure it exists
+            assignment = session.query(Assignment).options(
+                joinedload(Assignment.task),
+                joinedload(Assignment.aide)
+            ).get(assignment_id)
+            
+            if not assignment:
+                return error_response('NOT_FOUND', 'Assignment not found', 404)
+            
+            session.delete(assignment)
+            session.commit()
+            return '', 204
+        except Exception as e:
+            session.rollback()
             return error_response('INTERNAL_ERROR', str(e), 500)
 
 class AssignmentBatchResource(Resource):
     def post(self):
+        """Create multiple assignments in a batch."""
         session = next(get_db())
         try:
             data = request.get_json(force=True)
             
             # Validate required fields
-            required_fields = ['task_id', 'start_date', 'end_date', 'recurrence_rule']
+            required_fields = ['task_id', 'dates', 'start_time', 'end_time']
             for field in required_fields:
                 if field not in data:
                     return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
             
-            # Validate task exists
-            task = session.get(Task, data['task_id'])
+            # Validate task exists with eager loading
+            task = session.query(Task).options(
+                joinedload(Task.assignments)
+            ).get(data['task_id'])
             if not task:
                 return error_response('NOT_FOUND', 'Task not found', 404)
+            
+            # Validate aide if provided
+            aide = None
+            if 'aide_id' in data:
+                aide = session.query(TeacherAide).options(
+                    joinedload(TeacherAide.assignments)
+                ).get(data['aide_id'])
+                if not aide:
+                    return error_response('NOT_FOUND', 'Teacher aide not found', 404)
+            
+            # Validate time format
+            try:
+                start_time = time.fromisoformat(data['start_time'])
+                end_time = time.fromisoformat(data['end_time'])
+            except ValueError:
+                return error_response('VALIDATION_ERROR', 'Invalid time format. Use HH:MM', 422)
+            
+            if start_time >= end_time:
+                return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
+            
+            # Validate dates
+            try:
+                dates = [date.fromisoformat(d) for d in data['dates']]
+            except ValueError:
+                return error_response('VALIDATION_ERROR', 'Invalid date format. Use YYYY-MM-DD', 422)
+            
+            # Check for conflicts if aide is assigned
+            if aide:
+                conflicts = session.query(Assignment).options(
+                    joinedload(Assignment.task),
+                    joinedload(Assignment.aide)
+                ).filter(
+                    Assignment.aide_id == aide.id,
+                    Assignment.date.in_(dates),
+                    or_(
+                        and_(Assignment.start_time <= start_time, start_time < Assignment.end_time),
+                        and_(Assignment.start_time < end_time, end_time <= Assignment.end_time),
+                        and_(start_time <= Assignment.start_time, Assignment.start_time < end_time)
+                    )
+                ).all()
+                
+                if conflicts:
+                    return error_response('CONFLICT', 'Teacher aide has scheduling conflicts', 409)
+            
+            # Create assignments
+            assignments = []
+            for d in dates:
+                assignment = Assignment(
+                    task_id=task.id,
+                    aide_id=aide.id if aide else None,
+                    date=d,
+                    start_time=start_time,
+                    end_time=end_time,
+                    status=Status.ASSIGNED if aide else Status.UNASSIGNED
+                )
+                session.add(assignment)
+                assignments.append(assignment)
+            
+            session.flush()  # Get IDs without committing
+            
+            # Ensure relationships are loaded
+            for assignment in assignments:
+                session.refresh(assignment)
+            
+            session.commit()
+            
+            return {
+                'assignments': [serialize_assignment(a) for a in assignments]
+            }, 201
+            
+        except Exception as e:
+            session.rollback()
+            return error_response('INTERNAL_ERROR', str(e), 500)
+
+class AssignmentCheckResource(Resource):
+    def post(self):
+        """Check for assignment conflicts for an aide on a given date and time."""
+        session = next(get_db())
+        try:
+            data = request.get_json(force=True)
+            required_fields = ["aide_id", "date", "start_time", "end_time"]
+            for field in required_fields:
+                if field not in data:
+                    return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
+
+            # Validate aide exists with eager loading
+            aide = session.query(TeacherAide).options(
+                joinedload(TeacherAide.assignments)
+            ).get(data["aide_id"])
+            if not aide:
+                return error_response('NOT_FOUND', 'Teacher aide not found', 404)
+
+            # Validate date and time
+            try:
+                check_date = date.fromisoformat(data["date"])
+                start_time = time.fromisoformat(data["start_time"])
+                end_time = time.fromisoformat(data["end_time"])
+            except ValueError:
+                return error_response('VALIDATION_ERROR', 'Invalid date or time format', 422)
+            if start_time >= end_time:
+                return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
+
+            # Eagerly load all necessary relationships for conflict check
+            conflict = session.query(Assignment).options(
+                joinedload(Assignment.task),
+                joinedload(Assignment.aide)
+            ).filter(
+                Assignment.aide_id == data["aide_id"],
+                Assignment.date == check_date,
+                or_(
+                    and_(Assignment.start_time <= start_time, Assignment.end_time > start_time),
+                    and_(Assignment.start_time < end_time, Assignment.end_time >= end_time),
+                    and_(Assignment.start_time >= start_time, Assignment.start_time < end_time)
+                )
+            ).first()
+
+            if conflict:
+                # Ensure all relationships are loaded and attached to session
+                session.refresh(conflict)
+                if conflict.task:
+                    session.refresh(conflict.task)
+                if conflict.aide:
+                    session.refresh(conflict.aide)
+                # Extract task_title as a plain string before session closes
+                task_title = conflict.task.title if conflict.task else None
+                conflict_data = serialize_assignment(conflict, task_title=task_title)
+                return {"has_conflict": True, "conflicting_assignment": conflict_data}, 200
+            else:
+                return {"has_conflict": False}, 200
+        except Exception as e:
+            session.rollback()
+            return error_response('INTERNAL_ERROR', str(e), 500)
+
+class HorizonExtensionResource(Resource):
+    def post(self):
+        """Extend the assignment horizon by generating new assignments."""
+        session = next(get_db())
+        try:
+            data = request.get_json(silent=True) or {}
+            horizon_weeks = data.get('horizon_weeks', DEFAULT_HORIZON_WEEKS)
+            
+            # Validate horizon_weeks
+            try:
+                horizon_weeks = int(horizon_weeks)
+                if not 1 <= horizon_weeks <= 10:
+                    return error_response('VALIDATION_ERROR', 'horizon_weeks must be between 1 and 10', 422)
+            except (TypeError, ValueError):
+                return error_response('VALIDATION_ERROR', 'horizon_weeks must be an integer', 422)
+            
+            # Get all recurring tasks
+            tasks = session.query(Task).filter(Task.recurrence_rule.isnot(None)).all()
+            
+            # Generate assignments for each task
+            total_assignments = 0
+            for task in tasks:
+                if task.expires_on and task.expires_on < date.today():
+                    continue
+                    
+                start_date = date.today()
+                end_date = start_date + timedelta(weeks=horizon_weeks)
+                assignments = task.generate_assignments(start_date, end_date, session)
+                total_assignments += len(assignments)
+            
+            session.commit()
+            
+            return {
+                'assignments_created': total_assignments,
+                'tasks_processed': len(tasks)
+            }, 200
+        except Exception as e:
+            session.rollback()
+            return error_response('INTERNAL_ERROR', str(e), 500)
+
+# --- Absence Endpoints ---
+
+class AbsenceListResource(Resource):
+    def get(self, aide_id):
+        """Get all absences for a teacher aide."""
+        session = next(get_db())
+        try:
+            aide = session.get(TeacherAide, aide_id)
+            if not aide:
+                return error_response('NOT_FOUND', 'Teacher aide not found', 404)
+            
+            absences = session.query(Absence).filter_by(aide_id=aide_id).all()
+            return [serialize_absence(absence) for absence in absences], 200
+        except Exception as e:
+            return error_response('INTERNAL_ERROR', str(e), 500)
+
+    def post(self, aide_id):
+        """Create a new absence and unassign affected assignments."""
+        session = next(get_db())
+        try:
+            data = request.get_json(force=True)
+            
+            # Validate required fields
+            required_fields = ['start_date', 'end_date', 'reason']
+            for field in required_fields:
+                if field not in data:
+                    return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
+            
+            # Validate aide exists
+            aide = session.query(TeacherAide).get(aide_id)
+            if not aide:
+                return error_response('NOT_FOUND', 'Teacher aide not found', 404)
             
             # Validate dates
             try:
@@ -620,179 +1095,105 @@ class AssignmentBatchResource(Resource):
             if start_date > end_date:
                 return error_response('VALIDATION_ERROR', 'start_date must be before end_date', 422)
             
-            # Generate assignments based on recurrence rule
-            try:
-                from dateutil.rrule import rrulestr
-                from datetime import datetime as dt
-                
-                dt_start = dt.combine(start_date, dt.min.time())
-                dt_end = dt.combine(end_date, dt.max.time())
-                rule = rrulestr(data['recurrence_rule'], dtstart=dt_start)
-                dates = [d.date() for d in rule.between(dt_start, dt_end, inc=True)]
-                
-                assignments = []
-                for d in dates:
-                    assignment = Assignment(
-                        task_id=data['task_id'],
-                        aide_id=data.get('aide_id'),
-                        date=d,
-                        start_time=task.start_time,
-                        end_time=task.end_time,
-                        status='UNASSIGNED'
-                    )
-                    
-                    # Check for conflicts if aide is assigned
-                    if assignment.aide_id:
-                        conflicts = assignment.check_conflicts(session)
-                        if conflicts:
-                            session.rollback()
-                            return error_response('CONFLICT', 'Assignment conflicts with existing assignments', 409)
-                    
-                    assignments.append(assignment)
-                
-                session.add_all(assignments)
-                session.commit()
-                
-                result = {
-                    "assignments": [serialize_assignment(a) for a in assignments],
-                    "total": len(assignments)
-                }
-                return result, 201
-            except Exception as e:
-                session.rollback()
-                return error_response('VALIDATION_ERROR', f'Invalid recurrence rule: {str(e)}', 422)
-        except Exception as e:
-            session.rollback()
-            return error_response('INTERNAL_ERROR', str(e), 500)
-
-class AssignmentCheckResource(Resource):
-    def post(self):
-        logger.debug("Received POST request to /api/assignments/check")
-        session = next(get_db())
-        try:
-            data = request.get_json(force=True)
-            logger.debug(f"Request data: {data}")
-            # Validate required fields
-            required_fields = ['aide_id', 'date', 'start_time', 'end_time']
-            for field in required_fields:
-                if field not in data:
-                    logger.error(f"Missing required field: {field}")
-                    return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
-            # Validate aide exists
-            aide = session.get(TeacherAide, data['aide_id'])
-            if not aide:
-                logger.error(f"Teacher aide not found: {data['aide_id']}")
-                return error_response('NOT_FOUND', 'Teacher aide not found', 404)
-            # Validate times
-            try:
-                start_time = time.fromisoformat(data['start_time'])
-                end_time = time.fromisoformat(data['end_time'])
-                check_date = date.fromisoformat(data['date'])
-            except ValueError:
-                logger.error("Invalid date/time format")
-                return error_response('VALIDATION_ERROR', 'Invalid date/time format', 422)
-            if start_time >= end_time:
-                logger.error("start_time must be before end_time")
-                return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
-            # Check for conflicts
-            conflicts = session.query(Assignment).filter(
-                Assignment.aide_id == data['aide_id'],
-                Assignment.date == check_date,
-                (
-                    (Assignment.start_time <= start_time) & (start_time < Assignment.end_time) |
-                    (Assignment.start_time < end_time) & (end_time <= Assignment.end_time) |
-                    (start_time <= Assignment.start_time) & (Assignment.start_time < end_time)
+            # Check for overlapping absences
+            overlapping = session.query(Absence).filter(
+                Absence.aide_id == aide_id,
+                or_(
+                    and_(Absence.start_date <= start_date, start_date <= Absence.end_date),
+                    and_(Absence.start_date <= end_date, end_date <= Absence.end_date),
+                    and_(start_date <= Absence.start_date, Absence.start_date <= end_date)
                 )
-            ).all()
-            if conflicts:
-                logger.debug(f"Conflicts found: {conflicts}")
-                result = {
-                    "has_conflicts": True,
-                    "conflicts": [serialize_assignment(c) for c in conflicts]
-                }
-                return result, 409
-            else:
-                logger.debug("No conflicts found")
-                result = {
-                    "has_conflicts": False,
-                    "conflicts": []
-                }
-                return result, 200
-        except Exception as e:
-            logger.error(f"Internal error: {str(e)}")
-            return error_response('INTERNAL_ERROR', str(e), 500)
-
-class AssignmentResource(Resource):
-    def get(self, assignment_id):
-        session = next(get_db())
-        try:
-            assignment = session.get(Assignment, assignment_id)
-            if not assignment:
-                return error_response('NOT_FOUND', 'Assignment not found', 404)
-            result = serialize_assignment(assignment)
-            return result, 200
-        except Exception as e:
-            return error_response('INTERNAL_ERROR', str(e), 500)
-
-    def patch(self, assignment_id):
-        session = next(get_db())
-        try:
-            data = request.get_json(force=True)
-            assignment = session.get(Assignment, assignment_id)
-            if not assignment:
-                return error_response('NOT_FOUND', 'Assignment not found', 404)
+            ).first()
             
-            # Update fields if provided
-            if 'aide_id' in data:
-                aide = session.get(TeacherAide, data['aide_id'])
-                if not aide:
-                    return error_response('NOT_FOUND', 'Teacher aide not found', 404)
-                assignment.aide_id = data['aide_id']
+            if overlapping:
+                return error_response('CONFLICT', 'Absence overlaps with existing absence', 409)
             
-            if 'status' in data:
-                if data['status'] not in ['UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETE']:
-                    return error_response('VALIDATION_ERROR', 'Invalid status', 422)
-                assignment.status = data['status']
+            # Create absence
+            absence = Absence(
+                aide_id=aide_id,
+                start_date=start_date,
+                end_date=end_date,
+                reason=data['reason']
+            )
+            session.add(absence)
+            session.flush()
             
-            # Check for conflicts if aide_id changed
-            if 'aide_id' in data:
-                conflicts = assignment.check_conflicts(session)
-                if conflicts:
-                    return error_response('CONFLICT', 'Assignment conflicts with existing assignments', 409)
+            # Release affected assignments using the model method
+            released_assignments = absence.release_assignments(session)
             
             session.commit()
-            result = serialize_assignment(assignment)
-            return result, 200
+            
+            return {
+                'id': absence.id,
+                'aide_id': absence.aide_id,
+                'start_date': absence.start_date.isoformat(),
+                'end_date': absence.end_date.isoformat(),
+                'reason': absence.reason,
+                'affected_assignments': [{
+                    'id': a.id,
+                    'task_id': a.task_id,
+                    'date': a.date.isoformat(),
+                    'start_time': a.start_time.isoformat(),
+                    'end_time': a.end_time.isoformat(),
+                    'status': a.status
+                } for a in released_assignments]
+            }, 201
+            
         except Exception as e:
             session.rollback()
             return error_response('INTERNAL_ERROR', str(e), 500)
 
-    def delete(self, assignment_id):
+class AbsenceResource(Resource):
+    def delete(self, aide_id: int, absence_id: int):
+        """Delete an absence and reassign affected assignments."""
         session = next(get_db())
         try:
-            assignment = session.get(Assignment, assignment_id)
-            if not assignment:
-                return error_response('NOT_FOUND', 'Assignment not found', 404)
+            # Validate aide exists
+            aide = session.query(TeacherAide).get(aide_id)
+            if not aide:
+                return error_response('NOT_FOUND', 'Teacher aide not found', 404)
             
-            session.delete(assignment)
+            # Get absence with eager loading
+            absence = session.query(Absence).options(
+                joinedload(Absence.assignments)
+            ).get(absence_id)
+            if not absence:
+                return error_response('NOT_FOUND', 'Absence not found', 404)
+            
+            # Get affected assignments
+            affected_assignments = absence.assignments
+            
+            # Delete absence
+            session.delete(absence)
+            session.flush()
+            
+            # Reassign affected assignments
+            for assignment in affected_assignments:
+                assignment.aide_id = None
+                assignment.status = Status.UNASSIGNED
+            
             session.commit()
             return '', 204
+            
         except Exception as e:
             session.rollback()
             return error_response('INTERNAL_ERROR', str(e), 500)
 
-# Register resources
+# Register routes
+api.add_resource(TaskListResource, '/tasks')
+api.add_resource(TaskResource, '/tasks/<int:task_id>')
 api.add_resource(TeacherAideListResource, '/teacher-aides')
 api.add_resource(TeacherAideResource, '/teacher-aides/<int:aide_id>')
 api.add_resource(AvailabilityListResource, '/teacher-aides/<int:aide_id>/availability')
 api.add_resource(AvailabilityResource, '/teacher-aides/<int:aide_id>/availability/<int:avail_id>')
-api.add_resource(TaskListResource, '/tasks')
-api.add_resource(TaskResource, '/tasks/<int:task_id>')
 api.add_resource(AssignmentListResource, '/assignments')
+api.add_resource(AssignmentResource, '/assignments/<int:assignment_id>')
 api.add_resource(AssignmentBatchResource, '/assignments/batch')
 api.add_resource(AssignmentCheckResource, '/assignments/check')
-api.add_resource(AssignmentResource, '/assignments/<int:assignment_id>')
+api.add_resource(HorizonExtensionResource, '/assignments/extend-horizon')
+api.add_resource(AbsenceListResource, '/teacher-aides/<int:aide_id>/absences')
+api.add_resource(AbsenceResource, '/teacher-aides/<int:aide_id>/absences/<int:absence_id>')
 
 @api_bp.route('/health')
 def health_check():
-    return jsonify({"status": "healthy"}) 
+    return jsonify({"status": "healthy"}), 200 

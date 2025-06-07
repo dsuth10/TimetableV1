@@ -3,14 +3,15 @@ from datetime import date, time, datetime, timedelta
 from api.models import TeacherAide, Task, Assignment, Classroom
 from dateutil.rrule import rrulestr
 from api.db import init_db
+import uuid
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_database():
     init_db()
 
 def create_test_data(db_session):
-    # Create test classroom
-    classroom = Classroom(name="Test Classroom", capacity=20)
+    # Create test classroom with unique name
+    classroom = Classroom(name=f"Assignment Test Room {uuid.uuid4()}", capacity=20)
     db_session.add(classroom)
     db_session.commit()
 
@@ -63,7 +64,7 @@ def test_get_assignments_weekly(client, db_session):
 
     # Get current week number
     year, week, _ = today.isocalendar()
-    week_param = f"{year}-{week:02d}"
+    week_param = f"{year}-W{week:02d}"
     print("Week parameter:", week_param)
 
     # Test weekly view
@@ -90,6 +91,19 @@ def test_create_assignment(client, db_session):
     data = response.get_json()
     assert data["task_id"] == task.id
     assert data["aide_id"] == aide.id
+    assert data["status"] == "ASSIGNED"
+
+    # Test creating assignment without aide
+    response = client.post("/api/assignments", json={
+        "task_id": task.id,
+        "date": date.today().isoformat(),
+        "start_time": "09:00",
+        "end_time": "10:00"
+    })
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["task_id"] == task.id
+    assert data["aide_id"] is None
     assert data["status"] == "UNASSIGNED"
 
     # Test creating assignment with invalid time
@@ -107,33 +121,47 @@ def test_create_batch_assignments(client, db_session):
     
     # Test creating batch assignments
     start_date = date.today()
-    end_date = start_date + timedelta(days=4)
+    dates = [
+        start_date.isoformat(),
+        (start_date + timedelta(days=1)).isoformat(),
+        (start_date + timedelta(days=2)).isoformat()
+    ]
     
     response = client.post("/api/assignments/batch", json={
         "task_id": task.id,
         "aide_id": aide.id,
-        "start_date": start_date.isoformat(),
-        "end_date": end_date.isoformat(),
-        "recurrence_rule": "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
+        "dates": dates,
+        "start_time": "09:00",
+        "end_time": "10:00"
     })
     assert response.status_code == 201
     data = response.get_json()
     assert "assignments" in data
-    assert len(data["assignments"]) > 0
-    assert data["total"] > 0
+    assert len(data["assignments"]) == 3
+    for assignment in data["assignments"]:
+        assert assignment["task_id"] == task.id
+        assert assignment["aide_id"] == aide.id
+        assert assignment["status"] == "ASSIGNED"
 
-    # Test invalid recurrence rule
+    # Test with invalid date
     response = client.post("/api/assignments/batch", json={
         "task_id": task.id,
         "aide_id": aide.id,
-        "start_date": start_date.isoformat(),
-        "end_date": end_date.isoformat(),
-        "recurrence_rule": "INVALID_RULE"
+        "dates": ["invalid-date"],
+        "start_time": "09:00",
+        "end_time": "10:00"
     })
     assert response.status_code == 422
 
 def test_check_conflicts(client, db_session):
     classroom, task, aide = create_test_data(db_session)
+    
+    # Ensure aide is committed and visible
+    db_session.commit()
+    db_session.refresh(aide)
+    
+    # Extract task_title before session is closed
+    task_title = task.title
     
     # Create an existing assignment
     existing = Assignment(
@@ -146,33 +174,52 @@ def test_check_conflicts(client, db_session):
     )
     db_session.add(existing)
     db_session.commit()
-
-    # Ensure the teacher aide is committed to the database
-    db_session.commit()
-
+    db_session.refresh(existing)
+    
     # Test checking for conflicts
     response = client.post("/api/assignments/check", json={
         "aide_id": aide.id,
         "date": date.today().isoformat(),
-        "start_time": "09:30",  # Overlaps with existing assignment
+        "start_time": "09:30",
         "end_time": "10:30"
     })
-    assert response.status_code == 409
+    if response.status_code != 200:
+        print("DEBUG: Response status:", response.status_code)
+        print("DEBUG: Response data:", response.get_data(as_text=True))
+    assert response.status_code == 200
     data = response.get_json()
-    assert data["has_conflicts"] == True
-    assert len(data["conflicts"]) > 0
-
-    # Test checking for no conflicts
+    assert data["has_conflict"] is True
+    assert "conflicting_assignment" in data
+    assert data["conflicting_assignment"]["id"] == existing.id
+    assert data["conflicting_assignment"]["task_title"] == task_title
+    
+    # Test checking with no conflicts
     response = client.post("/api/assignments/check", json={
         "aide_id": aide.id,
         "date": date.today().isoformat(),
-        "start_time": "10:00",  # No overlap
-        "end_time": "11:00"
+        "start_time": "10:30",
+        "end_time": "11:30"
     })
     assert response.status_code == 200
     data = response.get_json()
-    assert data["has_conflicts"] == False
-    assert len(data["conflicts"]) == 0
+    assert data["has_conflict"] is False
+    assert "conflicting_assignment" not in data
+    
+    # Test with invalid date
+    response = client.post("/api/assignments/check", json={
+        "aide_id": aide.id,
+        "date": "invalid-date",
+        "start_time": "09:30",
+        "end_time": "10:30"
+    })
+    assert response.status_code == 422
+    
+    # Test with missing required fields
+    response = client.post("/api/assignments/check", json={
+        "aide_id": aide.id
+        # Missing date, start_time, end_time
+    })
+    assert response.status_code == 422
 
 def test_update_assignment(client, db_session):
     classroom, task, aide = create_test_data(db_session)
@@ -280,4 +327,67 @@ def test_weekly_view_validation(client, db_session):
 
     # Test non-existent week
     response = client.get("/api/assignments?week=2024-99")
-    assert response.status_code == 422 
+    assert response.status_code == 422
+
+def test_check_conflicts_detached_instance(client, db_session):
+    """Test that AssignmentCheckResource properly handles relationship loading without DetachedInstanceError."""
+    classroom, task, aide = create_test_data(db_session)
+    
+    # Create an existing assignment
+    existing = Assignment(
+        task_id=task.id,
+        aide_id=aide.id,
+        date=date.today(),
+        start_time=time(9, 0),
+        end_time=time(10, 0),
+        status="ASSIGNED"
+    )
+    db_session.add(existing)
+    db_session.commit()
+    db_session.refresh(existing)
+    
+    # Ensure task and aide are loaded in the session
+    db_session.refresh(task)
+    db_session.refresh(aide)
+    
+    # Test checking for conflicts with overlapping time
+    response = client.post("/api/assignments/check", json={
+        "aide_id": aide.id,
+        "date": date.today().isoformat(),
+        "start_time": "09:30",
+        "end_time": "10:30"
+    })
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["has_conflict"] is True
+    assert "conflicting_assignment" in data
+    conflict = data["conflicting_assignment"]
+    
+    # Verify all expected fields are present and accessible
+    assert "id" in conflict
+    assert "task_id" in conflict
+    assert "task_title" in conflict
+    assert "aide_id" in conflict
+    assert "date" in conflict
+    assert "start_time" in conflict
+    assert "end_time" in conflict
+    assert "status" in conflict
+    
+    # Verify the values match the existing assignment
+    assert conflict["id"] == existing.id
+    assert conflict["task_id"] == task.id
+    assert conflict["task_title"] == task.title
+    assert conflict["aide_id"] == aide.id
+    assert conflict["status"] == "ASSIGNED"
+    
+    # Test with no conflicts
+    response = client.post("/api/assignments/check", json={
+        "aide_id": aide.id,
+        "date": date.today().isoformat(),
+        "start_time": "10:30",
+        "end_time": "11:30"
+    })
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["has_conflict"] is False
+    assert "conflicting_assignment" not in data 

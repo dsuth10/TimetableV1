@@ -78,7 +78,7 @@ def test_availability_constraints(db_session):
 
 # Test Task model
 def test_task_creation(db_session):
-    classroom = Classroom(name="Room 101", capacity=30)
+    classroom = Classroom(name="Math Support Room", capacity=30)
     db_session.add(classroom)
     db_session.commit()
     
@@ -170,7 +170,8 @@ def test_absence_release_assignments(db_session):
     # Create an absence
     absence = Absence(
         aide_id=aide.id,
-        date=date(2024, 3, 4),
+        start_date=date(2024, 3, 4),
+        end_date=date(2024, 3, 4),
         reason="Sick"
     )
     db_session.add(absence)
@@ -184,7 +185,7 @@ def test_absence_release_assignments(db_session):
 # Test Classroom model
 def test_classroom_relationships(db_session):
     classroom = Classroom(
-        name="Science Lab",
+        name="Science Lab Room",
         capacity=25,
         notes="Has lab equipment"
     )
@@ -215,18 +216,24 @@ def test_cascade_deletes(db_session):
         end_time=time(15, 0)
     )
     absence = Absence(
-        date=date(2024, 3, 4),
+        aide_id=aide.id,
+        start_date=date(2024, 3, 4),
+        end_date=date(2024, 3, 4),
         reason="Test"
     )
     aide.availabilities.append(availability)
     aide.absences.append(absence)
     db_session.add(aide)
     db_session.commit()
-    
-    # Delete teacher aide
+
+    # Verify relationships exist
+    assert len(aide.availabilities) == 1
+    assert len(aide.absences) == 1
+
+    # Delete aide
     db_session.delete(aide)
     db_session.commit()
-    
-    # Check if related records are deleted
+
+    # Verify cascade deletes
     assert db_session.query(Availability).count() == 0
     assert db_session.query(Absence).count() == 0 

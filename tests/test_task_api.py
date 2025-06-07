@@ -1,13 +1,14 @@
 import pytest
 from datetime import time, date, timedelta
 from sqlalchemy.orm import Session
-from api.models import Assignment
-from api.db import SessionLocal
+from api.models import Assignment, Classroom
+from api.db import get_db, managed_session
+import uuid
 
 @pytest.fixture
 def classroom_payload():
     return {
-        "name": "Classroom 1",
+        "name": "Task Test Room",
         "capacity": 30
     }
 
@@ -31,18 +32,25 @@ def task_payload(classroom_id):
         "notes": "Supervise morning recess"
     }
 
+@pytest.fixture
+def db_session():
+    """Provide a database session for testing."""
+    with managed_session() as session:
+        yield session
+        session.rollback()  # Rollback changes after each test
+
 def test_create_and_get_task(client, task_payload):
     # Create
     resp = client.post("/api/tasks", json=task_payload)
     assert resp.status_code == 201
     data = resp.get_json()
-    assert data["title"] == task_payload["title"]
-    task_id = data["id"]
+    assert data["task"]["title"] == task_payload["title"]
+    task_id = data["task"]["id"]
     
     # Get
     resp = client.get(f"/api/tasks/{task_id}")
     assert resp.status_code == 200
-    assert resp.get_json()["id"] == task_id
+    assert resp.get_json()["task"]["id"] == task_id
 
 def test_list_tasks_with_filters(client, task_payload):
     # Create a task
@@ -80,7 +88,7 @@ def test_list_tasks_with_filters(client, task_payload):
 def test_update_and_delete_task(client, task_payload):
     # Create
     resp = client.post("/api/tasks", json=task_payload)
-    task_id = resp.get_json()["id"]
+    task_id = resp.get_json()["task"]["id"]
     
     # Update
     update = {
@@ -91,8 +99,8 @@ def test_update_and_delete_task(client, task_payload):
     resp = client.put(f"/api/tasks/{task_id}", json=update)
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data["title"] == "Updated Title"
-    assert data["start_time"] == "09:00"
+    assert data["task"]["title"] == "Updated Title"
+    assert data["task"]["start_time"] == "09:00"
     
     # Delete
     resp = client.delete(f"/api/tasks/{task_id}")
@@ -187,63 +195,91 @@ def test_task_pagination(client, task_payload):
     assert len(data["tasks"]) == 10
     assert data["page"] == 2
 
-def test_recurring_task_assignments(client, task_payload):
+def test_recurring_task_assignments(client, task_payload, db_session):
     # Clean up existing assignments
-    session = SessionLocal()
-    session.query(Assignment).delete()
-    session.commit()
-    session.close()
-    
+    db_session.query(Assignment).delete()
+    db_session.commit()
+
+    # Create a classroom via the API
+    classroom_payload = {"name": f"Task Test Room {uuid.uuid4()}", "capacity": 30}
+    resp = client.post("/api/classrooms", json=classroom_payload)
+    assert resp.status_code == 201
+    classroom_id = resp.get_json()["id"]
+    task_payload["classroom_id"] = classroom_id
+
     # Add expires_on to the task payload
     task_payload["expires_on"] = (date.today() + timedelta(weeks=4)).isoformat()
-    
+
     # Create recurring task
     resp = client.post("/api/tasks", json=task_payload)
+    print("Task creation response:", resp.status_code, resp.get_json())
     assert resp.status_code == 201
-    task_id = resp.get_json()["id"]
-    
+    task_data = resp.get_json()
+    assert "task" in task_data
+    assert "assignments" in task_data
+    task_id = task_data["task"]["id"]
+    print("Created task:", task_data["task"])
+    print("Generated assignments:", task_data["assignments"])
+    assert len(task_data["assignments"]) > 0
+
     # Verify assignments were created
     resp = client.get("/api/assignments")
+    print("Assignments response:", resp.status_code, resp.get_json())
     assert resp.status_code == 200
     data = resp.get_json()
+    print("All assignments:", data["assignments"])
     assignments_for_task = [a for a in data["assignments"] if a["task_id"] == task_id]
+    print("Assignments for task:", assignments_for_task)
     assert len(assignments_for_task) > 0
-    assert all(assignment["task_id"] == task_id for assignment in assignments_for_task)
 
 def test_update_task(client, task_payload):
     # Create a task
     resp = client.post("/api/tasks", json=task_payload)
     assert resp.status_code == 201
-    task_id = resp.get_json()["id"]
+    task_id = resp.get_json()["task"]["id"]
     
     # Update task details
     update_payload = {
         "title": "Updated Task Title",
         "notes": "Updated notes for the task"
     }
-    resp = client.patch(f"/api/tasks/{task_id}", json=update_payload)
+    resp = client.put(f"/api/tasks/{task_id}", json=update_payload)
     assert resp.status_code == 200
     updated_task = resp.get_json()
-    assert updated_task["title"] == update_payload["title"]
-    assert updated_task["notes"] == update_payload["notes"]
+    assert updated_task["task"]["title"] == update_payload["title"]
+    assert updated_task["task"]["notes"] == update_payload["notes"]
 
 def test_update_task_recurrence(client, task_payload):
+    # Create a classroom via the API
+    classroom_payload = {"name": f"Task Test Room {uuid.uuid4()}", "capacity": 30}
+    resp = client.post("/api/classrooms", json=classroom_payload)
+    assert resp.status_code == 201
+    classroom_id = resp.get_json()["id"]
+    task_payload["classroom_id"] = classroom_id
+
     # Create a recurring task
     resp = client.post("/api/tasks", json=task_payload)
+    print("Task creation response:", resp.status_code, resp.get_json())
     assert resp.status_code == 201
-    task_id = resp.get_json()["id"]
-    
+    task_data = resp.get_json()
+    assert "task" in task_data
+    assert "assignments" in task_data
+    task_id = task_data["task"]["id"]
+    print("Created task:", task_data["task"])
+    print("Generated assignments:", task_data["assignments"])
+    assert len(task_data["assignments"]) > 0
+
     # Update recurrence rule and set expires_on
     update_payload = {
         "recurrence_rule": "FREQ=WEEKLY;BYDAY=MO,WE,FR",
         "expires_on": (date.today() + timedelta(weeks=4)).isoformat()
     }
-    resp = client.patch(f"/api/tasks/{task_id}", json=update_payload)
+    resp = client.put(f"/api/tasks/{task_id}", json=update_payload)
+    print("Task update response:", resp.status_code, resp.get_json())
     assert resp.status_code == 200
-    
-    # Verify assignments are regenerated
-    resp = client.get("/api/assignments?per_page=100")
-    assert resp.status_code == 200
-    data = resp.get_json()
-    assignments_for_task = [a for a in data["assignments"] if a["task_id"] == task_id]
-    assert len(assignments_for_task) > 0 
+    updated_task = resp.get_json()
+    assert "task" in updated_task
+    assert "assignments" in updated_task
+    print("Updated task:", updated_task["task"])
+    print("Regenerated assignments:", updated_task["assignments"])
+    assert len(updated_task["assignments"]) > 0 
