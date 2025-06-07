@@ -82,4 +82,79 @@ pytest
 
 ## License
 
-MIT License 
+MIT License
+
+## Getting Started
+
+This project includes a Flask backend and a React frontend (Vite).
+
+### 1. Install Python dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Install Node.js dependencies
+
+```bash
+npm install
+```
+
+### 3. (First time only) Reset and seed the database
+
+If you encounter database errors or want to start fresh:
+
+```bash
+del instance\timetable.db  # On Windows
+# or
+rm instance/timetable.db    # On Mac/Linux
+python seed.py
+```
+
+### 4. Start the Flask backend
+
+```bash
+python app.py
+```
+- The backend will run at http://localhost:5000
+
+### 5. Start the React frontend
+
+In a new terminal:
+
+```bash
+npm run dev
+```
+- The frontend will run at http://localhost:5173 (or another port if 5173 is in use)
+
+### 6. Open the app
+
+Visit [http://localhost:5173/](http://localhost:5173/) in your browser.
+
+---
+
+## Troubleshooting
+
+- **Blank page or 500 errors?**
+  - Make sure the Flask backend is running and the database is seeded.
+  - If you see errors about existing indexes, delete `instance/timetable.db` and re-run `python seed.py`.
+- **API connection refused?**
+  - The frontend expects the backend at http://localhost:5000. Make sure it's running.
+- **Port in use?**
+  - If 5173 is in use, Vite will use the next available port (e.g., 5174). Check the terminal output for the correct URL.
+
+---
+
+## Project Structure
+
+- `api/` — Flask API code
+- `src/` — React frontend code
+- `instance/` — SQLite database file (`timetable.db`)
+- `seed.py` — Script to populate the database with test data
+
+---
+
+## Development Tips
+- Make sure to keep backend and frontend running in separate terminals.
+- If you change the database models, you may need to reset and reseed the database.
+- For any issues, check both the backend and frontend terminal output for errors. 

@@ -1,0 +1,80 @@
+.aide-timetable {
+  background: #232b33;
+  border-radius: 12px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  color: #fff;
+  box-shadow: 0 2px 8px #0002;
+  max-width: 900px;
+}
+.aide-name {
+  font-size: 2rem;
+  font-weight: bold;
+  margin-bottom: 1rem;
+}
+.timetable-grid {
+  display: grid;
+  grid-template-columns: 120px repeat(5, 1fr);
+  background: #1a2027;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.timetable-header-row {
+  display: contents;
+}
+.timetable-header-cell {
+  background: #232b33;
+  font-weight: bold;
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+  border-bottom: 2px solid #2d3748;
+  font-size: 1.1rem;
+}
+.timetable-row {
+  display: contents;
+}
+.timetable-time-cell {
+  background: #232b33;
+  font-weight: bold;
+  text-align: right;
+  padding: 0.5rem 1rem;
+  border-right: 2px solid #2d3748;
+  font-size: 1rem;
+}
+.timetable-cell {
+  padding: 0.5rem 0.25rem;
+  text-align: center;
+  border-bottom: 1px solid #2d3748;
+  border-right: 1px solid #2d3748;
+  font-size: 1rem;
+  min-height: 40px;
+  background: #232b33;
+  transition: background 0.2s;
+}
+.timetable-cell.assignment {
+  background: #3b82f6;
+  color: #fff;
+  font-weight: bold;
+}
+.timetable-cell.unavailable {
+  background: #3b3b8f;
+  color: #fff;
+  font-weight: bold;
+}
+.timetable-cell.lunch {
+  background: #222e3c;
+  color: #ffe082;
+  font-weight: bold;
+}
+.timetable-cell.default {
+  background: #232b33;
+  color: #fff;
+}
+.timetable-cell.unassigned {
+  background: #2d3748;
+  color: #bdbdbd;
+  font-style: italic;
+}
+.timetable-cell:last-child {
+  border-right: none;
+} 

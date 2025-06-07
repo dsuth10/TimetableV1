@@ -1,0 +1,207 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+## 1. Database Session Management
+
+Always use the `db_session` fixture for direct database access in tests. This ensures all database operations use the same connection as the Flask application.
+
+```python
+# ✅ DO: Use the db_session fixture
+def test_something(client, db_session):
+    db_session.query(Model).delete()
+    db_session.commit()
+
+# ❌ DON'T: Create separate sessions
+def test_something(client):
+    session = SessionLocal()  # Wrong! Uses different connection
+```
+
+## 2. API Response Structure
+
+Maintain consistent response structures across all API endpoints. This makes tests more reliable and easier to maintain.
+
+```python
+# ✅ DO: Use consistent response structure
+return {
+    "task": serialize_task(task),
+    "assignments": [serialize_assignment(a) for a in assignments]
+}
+
+# ❌ DON'T: Mix response structures
+return serialize_task(task)  # Inconsistent with other endpoints
+```
+
+## 3. Test Isolation
+
+Each test should start with a clean database state. Never rely on data from previous tests.
+
+```python
+# ✅ DO: Clean up at test start
+def test_something(client, db_session):
+    db_session.query(Model).delete()
+    db_session.commit()
+
+# ❌ DON'T: Assume clean state
+def test_something(client):
+    # Might fail if previous test left data
+```
+
+## 4. Database Connection Management
+
+Use the test engine configured in `conftest.py` for all database operations. Never create separate database connections in tests.
+
+```python
+# ✅ DO: Use the test engine from conftest.py
+@pytest.fixture(scope="session")
+def engine():
+    return create_engine('sqlite:///:memory:')
+
+# ❌ DON'T: Create separate connections
+engine = create_engine('sqlite:///test.db')  # Wrong! Different DB
+```
+
+## 5. Transaction Management
+
+Use transactions for test isolation. The `db_session` fixture handles this automatically.
+
+```python
+# ✅ DO: Let the fixture handle transactions
+@pytest.fixture
+def db_session(connection):
+    transaction = connection.begin()
+    session = Session(bind=connection)
+    yield session
+    session.close()
+    transaction.rollback()
+
+# ❌ DON'T: Mix transaction management
+session.commit()  # Without proper rollback
+```
+
+## 6. Test Data Cleanup
+
+Clean up specific test data after each test. Be precise about what you're cleaning up.
+
+```python
+# ✅ DO: Clean up specific data
+def test_something(client, db_session):
+    db_session.query(Assignment).filter(
+        Assignment.task_id == task_id
+    ).delete()
+    db_session.commit()
+
+# ❌ DON'T: Leave test data
+def test_something(client):
+    # No cleanup
+```
+
+## 7. API Response Validation
+
+Validate the complete response structure in tests. Don't make assumptions about the response format.
+
+```python
+# ✅ DO: Validate complete structure
+def test_api_response(client):
+    resp = client.post("/api/tasks", json=payload)
+    data = resp.get_json()
+    assert "task" in data
+    assert "assignments" in data
+    assert data["task"]["id"] is not None
+
+# ❌ DON'T: Make assumptions
+def test_api_response(client):
+    resp = client.post("/api/tasks", json=payload)
+    data = resp.get_json()
+    assert data["id"] is not None  # Might fail if structure changes
+```
+
+## 8. Test Debugging
+
+Include debug prints for complex operations to help identify issues.
+
+```python
+# ✅ DO: Add debug prints
+print("Task creation response:", resp.status_code, resp.get_json())
+print("Generated assignments:", task_data["assignments"])
+
+# ❌ DON'T: Remove debug prints before understanding the issue
+```
+
+## 9. Fixture Usage
+
+Use fixtures for common setup code. This reduces duplication and makes tests more maintainable.
+
+```python
+# ✅ DO: Use fixtures
+@pytest.fixture
+def task_payload(classroom_id):
+    return {
+        "title": "Test Task",
+        "category": "PLAYGROUND",
+        "classroom_id": classroom_id
+    }
+
+# ❌ DON'T: Duplicate setup
+def test_something(client):
+    payload = {
+        "title": "Test Task",
+        "category": "PLAYGROUND"
+    }
+```
+
+## 10. Error Handling
+
+Test both success and error cases. Don't focus only on the happy path.
+
+```python
+# ✅ DO: Test error cases
+def test_task_validation(client):
+    # Test missing fields
+    resp = client.post("/api/tasks", json={})
+    assert resp.status_code == 422
+    
+    # Test invalid data
+    resp = client.post("/api/tasks", json={"title": "Test"})
+    assert resp.status_code == 422
+
+# ❌ DON'T: Only test success
+def test_task_creation(client):
+    resp = client.post("/api/tasks", json=valid_payload)
+    assert resp.status_code == 201
+```
+
+## Common Issues to Watch For
+
+1. **Transaction Isolation**: Changes made in one test should not affect other tests
+2. **Response Structure**: Keep API responses consistent across all endpoints
+3. **Database State**: Always start tests with a known database state
+4. **Session Management**: Use the provided fixtures for database access
+5. **Error Cases**: Test both success and failure scenarios
+
+## Best Practices
+
+1. Run tests in isolation
+2. Clean up test data
+3. Use fixtures for common setup
+4. Validate complete response structures
+5. Include debug prints for complex operations
+6. Test both success and error cases
+7. Use transactions for test isolation
+8. Keep API responses consistent
+9. Document test requirements
+10. Review test coverage regularly
+
+## Tools and Fixtures
+
+The project provides several fixtures to help with testing:
+
+- `client`: Flask test client
+- `db_session`: Database session with automatic transaction management
+- `engine`: SQLite in-memory database engine
+- `connection`: Database connection for the test session
+- `tables`: Creates and drops tables as needed
+
+
+Use these fixtures instead of creating your own database connections or sessions. 

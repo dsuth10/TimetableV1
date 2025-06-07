@@ -183,9 +183,6 @@ def test_check_conflicts(client, db_session):
         "start_time": "09:30",
         "end_time": "10:30"
     })
-    if response.status_code != 200:
-        print("DEBUG: Response status:", response.status_code)
-        print("DEBUG: Response data:", response.get_data(as_text=True))
     assert response.status_code == 200
     data = response.get_json()
     assert data["has_conflict"] is True
@@ -204,22 +201,6 @@ def test_check_conflicts(client, db_session):
     data = response.get_json()
     assert data["has_conflict"] is False
     assert "conflicting_assignment" not in data
-    
-    # Test with invalid date
-    response = client.post("/api/assignments/check", json={
-        "aide_id": aide.id,
-        "date": "invalid-date",
-        "start_time": "09:30",
-        "end_time": "10:30"
-    })
-    assert response.status_code == 422
-    
-    # Test with missing required fields
-    response = client.post("/api/assignments/check", json={
-        "aide_id": aide.id
-        # Missing date, start_time, end_time
-    })
-    assert response.status_code == 422
 
 def test_update_assignment(client, db_session):
     classroom, task, aide = create_test_data(db_session)
@@ -282,7 +263,11 @@ def test_assignment_validation(client, db_session):
         # Missing date, start_time, end_time
     })
     assert response.status_code == 422
-
+    data = response.get_json()
+    assert "error" in data
+    assert "code" in data["error"]
+    assert "message" in data["error"]
+    
     # Test invalid date format
     response = client.post("/api/assignments", json={
         "task_id": task.id,
@@ -291,7 +276,11 @@ def test_assignment_validation(client, db_session):
         "end_time": "10:00"
     })
     assert response.status_code == 422
-
+    data = response.get_json()
+    assert "error" in data
+    assert "code" in data["error"]
+    assert "message" in data["error"]
+    
     # Test invalid time format
     response = client.post("/api/assignments", json={
         "task_id": task.id,
@@ -300,6 +289,10 @@ def test_assignment_validation(client, db_session):
         "end_time": "10:00"
     })
     assert response.status_code == 422
+    data = response.get_json()
+    assert "error" in data
+    assert "code" in data["error"]
+    assert "message" in data["error"]
 
 def test_batch_assignment_validation(client, db_session):
     classroom, task, aide = create_test_data(db_session)

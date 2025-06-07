@@ -4,7 +4,12 @@ from sqlalchemy.orm import sessionmaker
 import argparse
 import os
 from api.models import Base, TeacherAide, Availability, Classroom, Task, Assignment, Absence
-from api.db import init_db
+from api.db import init_db, get_session
+from app import create_app
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def create_teacher_aides(session):
     """Create teacher aides with different qualifications and colors."""
@@ -156,39 +161,87 @@ def create_absence(session, aides):
     session.add(absence)
     session.commit()
 
-def seed_database(reset=False):
-    """Seed the database with test data."""
-    # Create database engine and session
-    engine = create_engine('sqlite:///instance/timetable.db')
-    Session = sessionmaker(bind=engine)
-    session = Session()
+def seed_database():
+    """Seed the database with sample data."""
+    session = get_session()
     
     try:
-        if reset:
-            # Drop all tables and recreate them
-            Base.metadata.drop_all(engine)
-            init_db()
+        # Create sample teacher aides
+        aides = [
+            TeacherAide(name="John Smith", colour_hex="#4CAF50"),
+            TeacherAide(name="Jane Doe", colour_hex="#2196F3"),
+            TeacherAide(name="Bob Wilson", colour_hex="#FFC107"),
+        ]
+        session.add_all(aides)
+        session.flush()
         
-        # Create and populate data
-        aides = create_teacher_aides(session)
-        create_availabilities(session, aides)
-        classrooms = create_classrooms(session)
-        tasks = create_tasks(session, classrooms)
-        create_assignments(session, tasks, aides)
-        create_absence(session, aides)
+        # Create sample classroom
+        classroom = Classroom(name="Room 101", capacity=30)
+        session.add(classroom)
+        session.flush()
         
-        print("Database seeded successfully!")
+        # Create sample tasks
+        tasks = [
+            Task(
+                title="Math Support",
+                category="Academic",
+                start_time=time(9, 0),
+                end_time=time(10, 0),
+                classroom_id=classroom.id,
+                status="ASSIGNED"
+            ),
+            Task(
+                title="Reading Group",
+                category="Academic",
+                start_time=time(11, 0),
+                end_time=time(12, 0),
+                classroom_id=classroom.id,
+                status="ASSIGNED"
+            ),
+        ]
+        session.add_all(tasks)
+        session.flush()
+        
+        # Create sample assignments
+        today = date.today()
+        assignments = [
+            Assignment(
+                task_id=tasks[0].id,
+                aide_id=aides[0].id,
+                date=today,
+                start_time=time(9, 0),
+                end_time=time(10, 0),
+                status="ASSIGNED"
+            ),
+            Assignment(
+                task_id=tasks[1].id,
+                aide_id=aides[1].id,
+                date=today,
+                start_time=time(11, 0),
+                end_time=time(12, 0),
+                status="ASSIGNED"
+            ),
+        ]
+        session.add_all(assignments)
+        
+        # Create sample absence
+        absence = Absence(
+            aide_id=aides[2].id,
+            start_date=today,
+            end_date=today,
+            reason="Sick leave"
+        )
+        session.add(absence)
+        
+        session.commit()
+        logger.info("Database seeded successfully!")
         
     except Exception as e:
-        print(f"Error seeding database: {e}")
         session.rollback()
+        logger.error(f"Error seeding database: {e}")
         raise
     finally:
         session.close()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Seed the database with test data")
-    parser.add_argument("--reset", action="store_true", help="Reset the database before seeding")
-    args = parser.parse_args()
-    
-    seed_database(reset=args.reset) 
+    seed_database() 
