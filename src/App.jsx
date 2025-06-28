@@ -4,7 +4,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { store } from './store';
 import Layout from './components/Layout';
-import Schedule from './pages/Schedule';
+import Schedule from './components/Schedule';
 import AideManagement from './pages/AideManagement';
 import TaskManagement from './pages/TaskManagement';
 import Settings from './pages/Settings';

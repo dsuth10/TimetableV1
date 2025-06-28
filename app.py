@@ -34,9 +34,6 @@ def create_app(engine=None):
         logger.debug(f"{rule.endpoint}: {rule.rule}")
     return app
 
-# Initialize database
-# from api.db import init_db
-
 def print_routes(app):
     print("\nRegistered routes:")
     for rule in app.url_map.iter_rules():

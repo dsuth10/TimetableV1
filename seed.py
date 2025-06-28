@@ -77,17 +77,20 @@ def create_classrooms(session):
     return classrooms
 
 def create_tasks(session, classrooms):
-    """Create demo tasks of different categories."""
+    """Create demo tasks of different categories with all required fields."""
     today = date.today()
     tasks = [
+        # Flexible task (no classroom)
         Task(
             title="Morning Playground Supervision",
             category="PLAYGROUND",
             start_time=time(8, 30),
             end_time=time(9, 0),
             recurrence_rule="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
-            notes="Supervise students during morning recess"
+            notes="Supervise students during morning recess",
+            is_flexible=True
         ),
+        # Classroom-specific task
         Task(
             title="Math Class Support",
             category="CLASS_SUPPORT",
@@ -95,8 +98,10 @@ def create_tasks(session, classrooms):
             end_time=time(11, 0),
             classroom_id=classrooms[0].id,
             recurrence_rule="FREQ=WEEKLY;BYDAY=MO,WE,FR",
-            notes="Assist with math class activities"
+            notes="Assist with math class activities",
+            is_flexible=False
         ),
+        # Multi-period task
         Task(
             title="Reading Group Support",
             category="GROUP_SUPPORT",
@@ -104,8 +109,10 @@ def create_tasks(session, classrooms):
             end_time=time(12, 30),
             classroom_id=classrooms[1].id,
             recurrence_rule="FREQ=WEEKLY;BYDAY=TU,TH",
-            notes="Support small reading groups"
+            notes="Support small reading groups",
+            is_flexible=False
         ),
+        # Individual support task
         Task(
             title="Individual Student Support",
             category="INDIVIDUAL_SUPPORT",
@@ -113,15 +120,29 @@ def create_tasks(session, classrooms):
             end_time=time(14, 0),
             classroom_id=classrooms[2].id,
             recurrence_rule="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
-            notes="One-on-one support for special needs student"
+            notes="One-on-one support for special needs student",
+            is_flexible=False
         ),
+        # Afternoon task
         Task(
             title="Afternoon Playground",
             category="PLAYGROUND",
             start_time=time(14, 30),
             end_time=time(15, 0),
             recurrence_rule="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
-            notes="Supervise students during afternoon recess"
+            notes="Supervise students during afternoon recess",
+            is_flexible=True
+        ),
+        # Unassigned task (for testing drag and drop)
+        Task(
+            title="Library Support",
+            category="CLASS_SUPPORT",
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            classroom_id=classrooms[0].id,
+            recurrence_rule="FREQ=WEEKLY;BYDAY=MO,WE,FR",
+            notes="Assist in library during class time",
+            is_flexible=False
         )
     ]
     
@@ -140,6 +161,11 @@ def create_assignments(session, tasks, aides):
     for task in tasks:
         assignments = task.generate_assignments(start_date, end_date, session)
         for assignment in assignments:
+            # Leave the last task unassigned for testing drag and drop
+            if task.title == "Library Support":
+                assignment.status = 'UNASSIGNED'
+                continue
+                
             # Assign to a random aide if available
             for aide in aides:
                 if aide.is_available(assignment.date, assignment.start_time, assignment.end_time):
@@ -180,6 +206,8 @@ def clear_database(session):
 
 def seed_database():
     """Seed the database with sample data."""
+    # Ensure tables are created before clearing/seeding
+    init_db()
     session = get_session()
     
     try:
