@@ -245,7 +245,7 @@ class TaskListResource(Resource):
             assignments = session.query(Assignment).options(joinedload(Assignment.task)).filter(Assignment.task_id == task.id).all()
             result = {
                 "task": serialize_task(task),
-                "assignments": [serialize_assignment(a) for a in assignments]
+                "assignments": [serialize_assignment(a, task) for a in assignments]
             }
             return result, 201
             
@@ -300,32 +300,35 @@ class TaskResource(Resource):
                 task.classroom_id = data['classroom_id']
 
             # Handle recurrence rule changes
+            # Store old recurrence rule and times for update_future_assignments
+            old_recurrence = task.recurrence_rule
+            old_start_time = task.start_time
+            old_end_time = task.end_time
+
+            # Handle recurrence rule changes
             if 'recurrence_rule' in data:
-                old_rule = task.recurrence_rule
                 task.recurrence_rule = data['recurrence_rule']
 
-                # If recurrence rule changed, regenerate assignments
-                if old_rule != task.recurrence_rule:
-                    # Delete future assignments
-                    session.query(Assignment).filter(
-                        Assignment.task_id == task.id,
-                        Assignment.date >= date.today()
-                    ).delete()
-
-                    # Generate new assignments if recurring
-                    if task.recurrence_rule:
-                        start_date = date.today()
-                        end_date = start_date + timedelta(weeks=4)
-                        assignments = task.generate_assignments(start_date, end_date, session)
-                    else:
-                        assignments = []
-
+            # Update future assignments if recurrence or times changed
+            if (old_recurrence != task.recurrence_rule or
+                old_start_time != task.start_time or
+                old_end_time != task.end_time):
+                
+                # Use the dedicated function from api.recurrence
+                from api.recurrence import update_future_assignments
+                update_future_assignments(
+                    task, session,
+                    old_recurrence=old_recurrence,
+                    old_start_time=old_start_time,
+                    old_end_time=old_end_time
+                )
+            
             session.commit()
             # Fetch all assignments for this task with task eagerly loaded
             assignments = session.query(Assignment).options(joinedload(Assignment.task)).filter(Assignment.task_id == task.id).all()
             return {
                 'task': serialize_task(task),
-                'assignments': [serialize_assignment(a) for a in assignments]
+                'assignments': [serialize_assignment(a, task) for a in assignments]
             }, 200
 
         except Exception as e:
@@ -1196,4 +1199,4 @@ api.add_resource(AbsenceResource, '/teacher-aides/<int:aide_id>/absences/<int:ab
 
 @api_bp.route('/health')
 def health_check():
-    return jsonify({"status": "healthy"}), 200 
+    return jsonify({"status": "healthy"}), 200

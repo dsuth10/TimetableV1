@@ -58,11 +58,13 @@ describe('Schedule', () => {
     }).as('updateAssignment');
 
     cy.visit('/schedule');
-    cy.wait(['@getAssignments', '@getTeacherAides']);
   });
 
   it('should allow dragging an unassigned task to a time slot', () => {
-    // Wait for the schedule to load
+    // Wait for the loading spinner to disappear
+    cy.get('[data-testid="loading-spinner"]').should('not.exist');
+
+    // Wait for the schedule container to exist after loading
     cy.get('[data-testid="schedule-container"]').should('exist');
     
     // Verify the unassigned task exists in the unassigned list

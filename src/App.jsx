@@ -8,6 +8,7 @@ import Schedule from './components/Schedule';
 import AideManagement from './pages/AideManagement';
 import TaskManagement from './pages/TaskManagement';
 import Settings from './pages/Settings';
+import ClassManagement from './pages/ClassManagement'; // Import the new component
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
             <Route path="/" element={<Schedule />} />
             <Route path="/aides" element={<AideManagement />} />
             <Route path="/tasks" element={<TaskManagement />} />
+            <Route path="/classes" element={<ClassManagement />} /> {/* New route for Class Management */}
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </Layout>
@@ -26,4 +28,4 @@ function App() {
   );
 }
 
-export default App; 
+export default App;

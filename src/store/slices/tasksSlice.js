@@ -5,7 +5,7 @@ export const fetchTasks = createAsyncThunk(
   'tasks/fetchTasks',
   async () => {
     const response = await taskAPI.getAll();
-    return response.data.tasks;
+    return response.data;
   }
 );
 
@@ -38,4 +38,4 @@ const tasksSlice = createSlice({
 });
 
 export const { addTask } = tasksSlice.actions;
-export default tasksSlice.reducer; 
+export default tasksSlice.reducer;

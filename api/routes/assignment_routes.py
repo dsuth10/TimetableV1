@@ -46,11 +46,10 @@ class AssignmentListResource(Resource):
                 .all()
             
             # Get task titles for serialization
-            task_ids = {a.task_id for a in assignments}
-            tasks = {t.id: t.title for t in session.query(Task).filter(Task.id.in_(task_ids)).all()}
+            tasks_map = {t.id: t for t in session.query(Task).all()}
             
             return {
-                'items': [serialize_assignment(a, tasks.get(a.task_id)) for a in assignments],
+                'items': [serialize_assignment(a, tasks_map.get(a.task_id)) for a in assignments],
                 'total': total,
                 'page': page,
                 'per_page': per_page,
@@ -106,7 +105,7 @@ class AssignmentListResource(Resource):
             session.add(assignment)
             session.commit()
             
-            return serialize_assignment(assignment, task.title), 201
+            return serialize_assignment(assignment, task), 201
         except Exception as e:
             session.rollback()
             return error_response('INTERNAL_ERROR', str(e), 500)
@@ -120,10 +119,10 @@ class AssignmentResource(Resource):
             if not assignment:
                 return error_response('NOT_FOUND', f'Assignment {assignment_id} not found', 404)
             
-            # Get task title
+            # Get task
             task = session.query(Task).get(assignment.task_id)
             
-            return serialize_assignment(assignment, task.title if task else None), 200
+            return serialize_assignment(assignment, task), 200
         except Exception as e:
             return error_response('INTERNAL_ERROR', str(e), 500)
 
@@ -158,10 +157,10 @@ class AssignmentResource(Resource):
             
             session.commit()
             
-            # Get task title
+            # Get task
             task = session.query(Task).get(assignment.task_id)
             
-            return serialize_assignment(assignment, task.title if task else None), 200
+            return serialize_assignment(assignment, task), 200
         except Exception as e:
             session.rollback()
             return error_response('INTERNAL_ERROR', str(e), 500)
@@ -273,12 +272,11 @@ class AssignmentBatchResource(Resource):
             if created_assignments:
                 session.commit()
                 
-                # Get task titles for serialization
-                task_ids = {a.task_id for a in created_assignments}
-                tasks = {t.id: t.title for t in session.query(Task).filter(Task.id.in_(task_ids)).all()}
+                # Get tasks for serialization
+                tasks_map = {t.id: t for t in session.query(Task).all()}
                 
                 return {
-                    'created': [serialize_assignment(a, tasks.get(a.task_id)) for a in created_assignments],
+                    'created': [serialize_assignment(a, tasks_map.get(a.task_id)) for a in created_assignments],
                     'errors': errors
                 }, 201
             else:
@@ -330,7 +328,7 @@ class AssignmentCheckResource(Resource):
             
             return {
                 'available': not (assignments or absences),
-                'assignments': [serialize_assignment(a) for a in assignments],
+                'assignments': [serialize_assignment(a, conflict.task) if conflict else None for a in assignments],
                 'absences': [serialize_absence(a) for a in absences],
                 'availability': [serialize_availability(a) for a in availability]
             }, 200
@@ -357,4 +355,4 @@ class HorizonExtensionResource(Resource):
             
         except Exception as e:
             session.rollback()
-            return error_response('INTERNAL_ERROR', str(e), 500) 
+            return error_response('INTERNAL_ERROR', str(e), 500)

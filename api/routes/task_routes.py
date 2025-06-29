@@ -1,9 +1,10 @@
 from flask_restful import Resource
 from flask import request
-from api.models import Task
+from api.models import Task, SchoolClass # Import SchoolClass
 from api.db import get_db
 from datetime import date, time
 from .utils import error_response, serialize_task
+from sqlalchemy.orm import joinedload # Import joinedload
 
 class TaskListResource(Resource):
     def get(self):
@@ -17,8 +18,8 @@ class TaskListResource(Resource):
             page = int(request.args.get('page', 1))
             per_page = int(request.args.get('per_page', 20))
             
-            # Build query
-            query = session.query(Task)
+            # Build query, eagerly load school_class
+            query = session.query(Task).options(joinedload(Task.school_class))
             
             if status:
                 query = query.filter(Task.status == status)
@@ -78,6 +79,13 @@ class TaskListResource(Resource):
             
             if start_time >= end_time:
                 return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
+
+            # Validate school_class_id if provided
+            school_class_id = data.get('school_class_id')
+            if school_class_id:
+                school_class = session.query(SchoolClass).get(school_class_id)
+                if not school_class:
+                    return error_response('VALIDATION_ERROR', f'SchoolClass with ID {school_class_id} not found', 404)
             
             # Create task
             task = Task(
@@ -88,6 +96,7 @@ class TaskListResource(Resource):
                 recurrence_rule=data.get('recurrence_rule'),
                 expires_on=date.fromisoformat(data['expires_on']) if data.get('expires_on') else None,
                 classroom_id=data.get('classroom_id'),
+                school_class_id=school_class_id, # Add school_class_id
                 notes=data.get('notes'),
                 status=data.get('status', 'ACTIVE')
             )
@@ -104,7 +113,7 @@ class TaskResource(Resource):
     def get(self, task_id):
         session = next(get_db())
         try:
-            task = session.query(Task).get(task_id)
+            task = session.query(Task).options(joinedload(Task.school_class)).get(task_id) # Eagerly load school_class
             if not task:
                 return error_response('NOT_FOUND', f'Task {task_id} not found', 404)
             return serialize_task(task), 200
@@ -146,6 +155,13 @@ class TaskResource(Resource):
                     return error_response('VALIDATION_ERROR', 'Invalid expires_on format. Use YYYY-MM-DD', 422)
             if 'classroom_id' in data:
                 task.classroom_id = data['classroom_id']
+            if 'school_class_id' in data: # Handle school_class_id update
+                school_class_id = data['school_class_id']
+                if school_class_id:
+                    school_class = session.query(SchoolClass).get(school_class_id)
+                    if not school_class:
+                        return error_response('VALIDATION_ERROR', f'SchoolClass with ID {school_class_id} not found', 404)
+                task.school_class_id = school_class_id
             if 'notes' in data:
                 task.notes = data['notes']
             if 'status' in data:
@@ -169,4 +185,4 @@ class TaskResource(Resource):
             return '', 204
         except Exception as e:
             session.rollback()
-            return error_response('INTERNAL_ERROR', str(e), 500) 
+            return error_response('INTERNAL_ERROR', str(e), 500)

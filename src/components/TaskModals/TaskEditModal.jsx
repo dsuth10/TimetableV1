@@ -58,7 +58,26 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
 
   useEffect(() => {
     if (task) {
-      const recurrenceRule = task.recurrence_rule ? JSON.parse(task.recurrence_rule) : null;
+      let isRecurring = false;
+      let selectedDays = [];
+      let expiresOn = null;
+
+      if (task.recurrence_rule) {
+        isRecurring = true;
+        const bydayMatch = task.recurrence_rule.match(/BYDAY=([^;]+)/);
+        if (bydayMatch && bydayMatch[1]) {
+          selectedDays = bydayMatch[1].split(',');
+        }
+        const untilMatch = task.recurrence_rule.match(/UNTIL=([^;]+)/); // Assuming UNTIL for expires_on
+        if (untilMatch && untilMatch[1]) {
+          // Parse UNTIL date (e.g., 20250630T235959Z)
+          const dateStr = untilMatch[1].substring(0, 4) + '-' + untilMatch[1].substring(4, 6) + '-' + untilMatch[1].substring(6, 8);
+          expiresOn = new Date(dateStr);
+        } else if (task.expires_on) { // Fallback to expires_on if UNTIL not in rule
+          expiresOn = new Date(task.expires_on);
+        }
+      }
+
       setFormData({
         title: task.title || '',
         category: task.category || '',
@@ -66,9 +85,9 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
         endTime: task.end_time ? new Date(`2000-01-01T${task.end_time}`) : null,
         classroomId: task.classroom_id || '',
         notes: task.notes || '',
-        isRecurring: !!recurrenceRule,
-        selectedDays: recurrenceRule?.days || [],
-        expiresOn: recurrenceRule?.expires_on ? new Date(recurrenceRule.expires_on) : null,
+        isRecurring: isRecurring,
+        selectedDays: selectedDays,
+        expiresOn: expiresOn,
       });
     }
   }, [task]);
@@ -121,13 +140,14 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
     try {
       // Format the data for the API
       const apiData = {
-        ...formData,
+        title: formData.title,
+        category: formData.category,
         start_time: formData.startTime ? formData.startTime.toLocaleTimeString('en-US', { hour12: false }) : null,
         end_time: formData.endTime ? formData.endTime.toLocaleTimeString('en-US', { hour12: false }) : null,
-        recurrence_rule: formData.isRecurring ? {
-          days: formData.selectedDays,
-          expires_on: formData.expiresOn ? formData.expiresOn.toISOString().split('T')[0] : null,
-        } : null,
+        classroom_id: formData.classroomId || null,
+        notes: formData.notes || null,
+        recurrence_rule: formData.isRecurring ? `FREQ=WEEKLY;BYDAY=${formData.selectedDays.join(',')}${formData.expiresOn ? `;UNTIL=${formData.expiresOn.toISOString().replace(/[-:]|\.\d{3}/g, '')}` : ''}` : null,
+        expires_on: formData.isRecurring && formData.expiresOn ? formData.expiresOn.toISOString().split('T')[0] : null,
       };
 
       const result = await updateTask(task.id, apiData);
@@ -148,10 +168,7 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
         ...formData,
         start_time: formData.startTime ? formData.startTime.toLocaleTimeString('en-US', { hour12: false }) : null,
         end_time: formData.endTime ? formData.endTime.toLocaleTimeString('en-US', { hour12: false }) : null,
-        recurrence_rule: {
-          days: formData.selectedDays,
-          expires_on: formData.expiresOn ? formData.expiresOn.toISOString().split('T')[0] : null,
-        },
+        recurrence_rule: `FREQ=WEEKLY;BYDAY=${formData.selectedDays.join(',')}${formData.expiresOn ? `;UNTIL=${formData.expiresOn.toISOString().replace(/[-:]|\.\d{3}/g, '')}` : ''}`,
       };
 
       const preview = await previewRecurringTask(apiData);
@@ -196,10 +213,10 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
                 onChange={handleChange('category')}
                 label="Category"
               >
-                <MenuItem value="TEACHING">Teaching</MenuItem>
-                <MenuItem value="SUPERVISION">Supervision</MenuItem>
-                <MenuItem value="MEETING">Meeting</MenuItem>
-                <MenuItem value="OTHER">Other</MenuItem>
+                <MenuItem value="PLAYGROUND">Playground</MenuItem>
+                <MenuItem value="CLASS_SUPPORT">Class Support</MenuItem>
+                <MenuItem value="GROUP_SUPPORT">Group Support</MenuItem>
+                <MenuItem value="INDIVIDUAL_SUPPORT">Individual Support</MenuItem>
               </Select>
               {errors.category && (
                 <Typography color="error" variant="caption">
@@ -312,4 +329,4 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
   );
 };
 
-export default TaskEditModal; 
+export default TaskEditModal;

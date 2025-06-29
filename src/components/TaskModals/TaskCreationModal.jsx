@@ -19,7 +19,7 @@ import {
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import RecurrenceOptions from './RecurrenceOptions';
 import { validateTaskForm } from './validation';
-import { createTask, getClassrooms, previewRecurringTask } from '../../services/taskService';
+import { createTask, getClassrooms, getSchoolClasses, previewRecurringTask } from '../../services/taskService'; // Import getSchoolClasses
 import { addTask } from '../../store/slices/tasksSlice';
 
 const TaskCreationModal = ({ open, onClose, onSubmit }) => {
@@ -30,6 +30,7 @@ const TaskCreationModal = ({ open, onClose, onSubmit }) => {
     startTime: null,
     endTime: null,
     classroomId: '',
+    schoolClassId: '', // New state for school_class_id
     notes: '',
     isRecurring: false,
     selectedDays: [],
@@ -38,25 +39,29 @@ const TaskCreationModal = ({ open, onClose, onSubmit }) => {
 
   const [errors, setErrors] = useState({});
   const [classrooms, setClassrooms] = useState([]);
+  const [schoolClasses, setSchoolClasses] = useState([]); // New state for school classes
   const [loading, setLoading] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [apiError, setApiError] = useState(null);
 
   useEffect(() => {
-    const fetchClassrooms = async () => {
+    const fetchData = async () => {
       try {
-        const data = await getClassrooms();
-        // Ensure data is an array
-        setClassrooms(Array.isArray(data) ? data : []);
+        const classroomData = await getClassrooms();
+        setClassrooms(Array.isArray(classroomData) ? classroomData : []);
+
+        const schoolClassData = await getSchoolClasses(); // Fetch school classes
+        setSchoolClasses(Array.isArray(schoolClassData) ? schoolClassData : []);
       } catch (error) {
-        console.error('Failed to fetch classrooms:', error);
-        setApiError('Failed to load classrooms');
+        console.error('Failed to fetch data:', error);
+        setApiError('Failed to load data (classrooms or school classes)');
         setClassrooms([]);
+        setSchoolClasses([]);
       }
     };
 
     if (open) {
-      fetchClassrooms();
+      fetchData();
     }
   }, [open]);
 
@@ -113,6 +118,7 @@ const TaskCreationModal = ({ open, onClose, onSubmit }) => {
         start_time: formData.startTime ? formData.startTime.toLocaleTimeString('en-US', { hour12: false }) : null,
         end_time: formData.endTime ? formData.endTime.toLocaleTimeString('en-US', { hour12: false }) : null,
         classroom_id: formData.classroomId || null,
+        school_class_id: formData.schoolClassId || null, // Include school_class_id
         notes: formData.notes || null,
         recurrence_rule: formData.isRecurring ? `FREQ=WEEKLY;BYDAY=${formData.selectedDays.join(',')}` : null,
         expires_on: formData.isRecurring && formData.expiresOn ? formData.expiresOn.toISOString().split('T')[0] : null,
@@ -225,9 +231,27 @@ const TaskCreationModal = ({ open, onClose, onSubmit }) => {
                 onChange={handleChange('classroomId')}
                 label="Classroom"
               >
+                <MenuItem value=""><em>None</em></MenuItem>
                 {classrooms.map((classroom) => (
                   <MenuItem key={classroom.id} value={classroom.id}>
                     {classroom.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            {/* New School Class Dropdown */}
+            <FormControl fullWidth>
+              <InputLabel>School Class</InputLabel>
+              <Select
+                value={formData.schoolClassId}
+                onChange={handleChange('schoolClassId')}
+                label="School Class"
+              >
+                <MenuItem value=""><em>None</em></MenuItem>
+                {schoolClasses.map((schoolClass) => (
+                  <MenuItem key={schoolClass.id} value={schoolClass.id}>
+                    {schoolClass.class_code} ({schoolClass.teacher})
                   </MenuItem>
                 ))}
               </Select>
@@ -283,4 +307,4 @@ const TaskCreationModal = ({ open, onClose, onSubmit }) => {
   );
 };
 
-export default TaskCreationModal; 
+export default TaskCreationModal;

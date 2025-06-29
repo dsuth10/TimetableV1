@@ -61,7 +61,14 @@ const handleApiError = (error) => {
 };
 
 export const teacherAideAPI = {
-  getAll: () => api.get('/teacher-aides').catch(handleApiError),
+  getAll: async () => {
+    try {
+      const response = await api.get('/teacher-aides');
+      return { ...response, data: Array.isArray(response.data) ? response.data : [] };
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
   getById: (id) => api.get(`/teacher-aides/${id}`).catch(handleApiError),
   create: (data) => api.post('/teacher-aides', data).catch(handleApiError),
   update: (id, data) => api.put(`/teacher-aides/${id}`, data).catch(handleApiError),
@@ -69,7 +76,14 @@ export const teacherAideAPI = {
 };
 
 export const taskAPI = {
-  getAll: () => api.get('/tasks').catch(handleApiError),
+  getAll: async () => {
+    try {
+      const response = await api.get('/tasks');
+      return { ...response, data: Array.isArray(response.data) ? response.data : [] };
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
   getById: (id) => api.get(`/tasks/${id}`).catch(handleApiError),
   create: (data) => api.post('/tasks', data).catch(handleApiError),
   update: (id, data) => api.put(`/tasks/${id}`, data).catch(handleApiError),
@@ -77,7 +91,14 @@ export const taskAPI = {
 };
 
 export const assignmentAPI = {
-  getAll: () => api.get('/assignments').catch(handleApiError),
+  getAll: async () => {
+    try {
+      const response = await api.get('/assignments');
+      return { ...response, data: Array.isArray(response.data) ? response.data : [] };
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
   getById: (id) => api.get(`/assignments/${id}`).catch(handleApiError),
   create: (data) => api.post('/assignments', data).catch(handleApiError),
   update: (id, data) => api.put(`/assignments/${id}`, data).catch(handleApiError),
@@ -85,11 +106,18 @@ export const assignmentAPI = {
 };
 
 export const absenceAPI = {
-  getAll: () => api.get('/absences').catch(handleApiError),
+  getAll: async () => {
+    try {
+      const response = await api.get('/absences');
+      return { ...response, data: Array.isArray(response.data) ? response.data : [] };
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
   getById: (id) => api.get(`/absences/${id}`).catch(handleApiError),
   create: (data) => api.post('/absences', data).catch(handleApiError),
   update: (id, data) => api.put(`/absences/${id}`, data).catch(handleApiError),
   delete: (id) => api.delete(`/absences/${id}`).catch(handleApiError),
 };
 
-export default api; 
+export default api;

@@ -4,4 +4,5 @@ from .availability import Availability
 from .classroom import Classroom
 from .task import Task
 from .assignment import Assignment
-from .absence import Absence 
+from .absence import Absence
+from .school_class import SchoolClass

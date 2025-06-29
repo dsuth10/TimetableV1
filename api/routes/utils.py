@@ -1,10 +1,25 @@
 from flask import jsonify
 from sqlalchemy.orm.exc import DetachedInstanceError
 from datetime import datetime
+from api.models import SchoolClass # Import SchoolClass
 
 def error_response(code: str, message: str, status: int) -> tuple[dict, int]:
     """Return a standardized error response."""
     return {'error': {'code': code, 'message': message}}, status
+
+def serialize_school_class(school_class):
+    """Serializes a SchoolClass object to a dictionary."""
+    if not school_class:
+        return None
+    return {
+        'id': school_class.id,
+        'class_code': school_class.class_code,
+        'grade': school_class.grade,
+        'teacher': school_class.teacher,
+        'notes': school_class.notes,
+        'created_at': school_class.created_at.isoformat() if school_class.created_at else None,
+        'updated_at': school_class.updated_at.isoformat() if school_class.updated_at else None,
+    }
 
 def serialize_task(task):
     """Serialize a Task instance to a dictionary."""
@@ -12,29 +27,39 @@ def serialize_task(task):
         'id': task.id,
         'title': task.title,
         'category': task.category,
-        'start_time': task.start_time.strftime('%H:%M'),
-        'end_time': task.end_time.strftime('%H:%M'),
+        'start_time': task.start_time.strftime('%H:%M') if task.start_time else None,
+        'end_time': task.end_time.strftime('%H:%M') if task.end_time else None,
         'recurrence_rule': task.recurrence_rule,
         'expires_on': task.expires_on.isoformat() if task.expires_on else None,
         'classroom_id': task.classroom_id,
+        'school_class_id': task.school_class_id, # Add school_class_id
+        'school_class': serialize_school_class(task.school_class) if task.school_class else None, # Add serialized school_class
         'notes': task.notes,
         'status': task.status,
         'created_at': task.created_at.isoformat() if task.created_at else None,
         'updated_at': task.updated_at.isoformat() if task.updated_at else None
     }
 
-def serialize_assignment(assignment, task_title=None):
+def serialize_assignment(assignment, task=None):
     """Serialize an Assignment instance to a dictionary."""
-    # Always use provided task_title if given
-    if task_title is not None:
-        resolved_task_title = task_title
+    # If task object is provided, use its properties
+    task_title = None
+    task_category = None
+    task_notes = None
+    if task:
+        task_title = task.title
+        task_category = task.category
+        task_notes = task.notes
     else:
-        # Defensive: check if assignment.task is loaded and not detached
+        # Otherwise, try to load from assignment.task relationship
         try:
-            resolved_task_title = assignment.task.title if assignment.task else None
+            if assignment.task:
+                task_title = assignment.task.title
+                task_category = assignment.task.category
+                task_notes = assignment.task.notes
         except (DetachedInstanceError, AttributeError):
-            resolved_task_title = None
-            
+            pass # Task not loaded or detached
+
     # Safely handle datetime fields
     created_at = None
     updated_at = None
@@ -52,7 +77,9 @@ def serialize_assignment(assignment, task_title=None):
         'start_time': assignment.start_time.strftime('%H:%M'),
         'end_time': assignment.end_time.strftime('%H:%M'),
         'status': assignment.status,
-        'task_title': resolved_task_title,
+        'task_title': task_title,
+        'task_category': task_category,
+        'notes': task_notes,
         'created_at': created_at,
         'updated_at': updated_at
     }
@@ -84,7 +111,19 @@ def serialize_absence(absence):
     return {
         'id': absence.id,
         'aide_id': absence.aide_id,
-        'date': absence.date.isoformat(),
+        'start_date': absence.start_date.isoformat(),
+        'end_date': absence.end_date.isoformat(),
         'reason': absence.reason,
         'created_at': absence.created_at.isoformat() if absence.created_at else None
-    } 
+    }
+
+def serialize_classroom(classroom):
+    """Serialize a Classroom instance to a dictionary."""
+    return {
+        'id': classroom.id,
+        'name': classroom.name,
+        'capacity': classroom.capacity,
+        'notes': classroom.notes,
+        'created_at': classroom.created_at.isoformat() if classroom.created_at else None,
+        'updated_at': classroom.updated_at.isoformat() if classroom.updated_at else None
+    }

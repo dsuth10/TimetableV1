@@ -34,9 +34,16 @@ from .assignment_routes import (
     HorizonExtensionResource
 )
 from .absence_routes import AbsenceListResource, AbsenceResource
+from .classroom_routes import ClassroomListResource, ClassroomResource
+from .school_class_routes import SchoolClassListResource, SchoolClassBulkUploadResource, SchoolClassResource
 
 # Register resources
 api.add_resource(TaskListResource, '/tasks')
+api.add_resource(ClassroomListResource, '/classrooms')
+api.add_resource(SchoolClassListResource, '/school-classes')
+api.add_resource(SchoolClassBulkUploadResource, '/school-classes/bulk-upload')
+api.add_resource(SchoolClassResource, '/school-classes/<int:school_class_id>')
+api.add_resource(ClassroomResource, '/classrooms/<int:classroom_id>')
 api.add_resource(TaskResource, '/tasks/<int:task_id>')
 api.add_resource(TeacherAideListResource, '/teacher-aides')
 api.add_resource(TeacherAideResource, '/teacher-aides/<int:aide_id>')
@@ -52,4 +59,4 @@ api.add_resource(AbsenceResource, '/absences/<int:absence_id>')
 
 @api_bp.route('/health')
 def health_check():
-    return jsonify({'status': 'ok'}), 200 
+    return jsonify({'status': 'ok'}), 200

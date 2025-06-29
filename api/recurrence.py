@@ -28,67 +28,6 @@ def parse_rrule(rrule_str: str, start_date: date) -> Optional[rrulestr]:
     except ValueError:
         return None
 
-def generate_assignments(task: 'Task', start_date: date, end_date: date, session: Session) -> List['Assignment']:
-    """Generate assignments for a task between start_date and end_date.
-    
-    Args:
-        task: The task to generate assignments for
-        start_date: The start date for assignment generation
-        end_date: The end date for assignment generation (inclusive)
-        session: The database session to use
-        
-    Returns:
-        List of generated assignments
-    """
-    if not task.recurrence_rule:
-        return []
-        
-    try:
-        # Parse the recurrence rule
-        rule = rrulestr(task.recurrence_rule, dtstart=datetime.combine(start_date, task.start_time))
-        
-        # Generate dates - use end of day for end_date to include it
-        dates = list(rule.between(
-            datetime.combine(start_date, task.start_time),
-            datetime.combine(end_date, datetime.max.time()),
-            inc=True
-        ))
-        
-        # Create assignments
-        from api.models import Assignment
-        assignments = []
-        for dt in dates:
-            # Skip if before task's start date
-            if dt.date() < start_date:
-                continue
-            # Skip if after task's end date
-            if task.expires_on and dt.date() > task.expires_on:
-                continue
-            # Check if assignment already exists for this date
-            existing = session.query(Assignment).filter_by(
-                task_id=task.id,
-                date=dt.date(),
-                start_time=task.start_time,
-                end_time=task.end_time
-            ).first()
-            if existing:
-                continue
-            # Create assignment
-            assignment = Assignment(
-                task_id=task.id,
-                date=dt.date(),
-                start_time=task.start_time,
-                end_time=task.end_time,
-                status=Status.UNASSIGNED
-            )
-            session.add(assignment)
-            assignments.append(assignment)
-        session.flush()
-        return assignments
-        
-    except Exception as e:
-        raise ValueError(f"Invalid recurrence rule: {str(e)}")
-
 def extend_assignment_horizon(
     session: Session,
     horizon_weeks: int = DEFAULT_HORIZON_WEEKS
@@ -167,4 +106,4 @@ def update_future_assignments(task: Task, session, old_recurrence: Optional[str]
     # Commit changes
     session.commit()
     
-    return len(new_assignments) 
+    return len(new_assignments)

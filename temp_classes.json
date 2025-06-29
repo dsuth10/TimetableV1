@@ -1,0 +1,14 @@
+[
+  {
+    "class_code": "MATH101",
+    "grade": "10",
+    "teacher": "Ms. Davis",
+    "notes": "Algebra class"
+  },
+  {
+    "class_code": "ENG201",
+    "grade": "11",
+    "teacher": "Mr. Johnson",
+    "notes": "Literature class"
+  }
+]

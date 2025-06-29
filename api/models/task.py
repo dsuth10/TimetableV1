@@ -23,6 +23,7 @@ class Task(Base):
     recurrence_rule = Column(String(200))
     expires_on = Column(Date)
     classroom_id = Column(Integer, ForeignKey('classrooms.id', ondelete='SET NULL'))
+    school_class_id = Column(Integer, ForeignKey('school_classes.id', ondelete='SET NULL')) # New foreign key
     notes = Column(Text)
     status = Column(String(20), default='UNASSIGNED')
     created_at = Column(DateTime, server_default=func.now())
@@ -31,6 +32,7 @@ class Task(Base):
     
     # Relationships
     classroom = relationship('Classroom', back_populates='tasks')
+    school_class = relationship('SchoolClass', back_populates='tasks') # New relationship
     assignments = relationship('Assignment', back_populates='task', cascade='all, delete-orphan')
     
     def generate_assignments(self, start_date: date, end_date: date, session=None) -> List['Assignment']:
@@ -130,4 +132,4 @@ class Task(Base):
             new_assignments = self.generate_assignments(start_date, end_date, session)
             return len(new_assignments)
         
-        return 0 
+        return 0

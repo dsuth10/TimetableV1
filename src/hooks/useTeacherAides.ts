@@ -8,13 +8,16 @@ export const useTeacherAides = () => {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    console.log('useTeacherAides: Fetching teacher aides...');
     const fetchTeacherAides = async () => {
       try {
         const response = await teacherAideAPI.getAll();
-        setTeacherAides(response.data);
+        const data = Array.isArray(response.data) ? response.data : [];
+        setTeacherAides(data);
         setError(null);
+        console.log('useTeacherAides: Teacher aides fetched successfully', response.data);
       } catch (error) {
-        console.error('Failed to fetch teacher aides:', error);
+        console.error('useTeacherAides: Failed to fetch teacher aides:', error);
         setError(error instanceof Error ? error : new Error('Failed to fetch teacher aides'));
         setTeacherAides([]);
       } finally {
@@ -26,4 +29,4 @@ export const useTeacherAides = () => {
   }, []);
 
   return { teacherAides, isLoading, error };
-}; 
+};

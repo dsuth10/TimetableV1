@@ -40,4 +40,13 @@ export const getClassrooms = async () => {
 export const previewRecurringTask = async (taskData) => {
   const response = await axios.post(`${API_BASE_URL}/tasks/preview`, taskData);
   return response.data;
-}; 
+};
+
+/**
+ * Fetches all school classes
+ * @returns {Promise} Promise resolving to the list of school classes
+ */
+export const getSchoolClasses = async () => {
+  const response = await axios.get(`${API_BASE_URL}/school-classes`);
+  return response.data;
+};
