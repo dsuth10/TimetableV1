@@ -154,7 +154,8 @@ const TaskCreationModal: React.FC<TaskCreationModalProps> = ({ open, onClose, on
       };
 
       const result = await createTask(apiData); // Always call createTask
-      dispatch(addTask(result.task));
+      // The API returns the created task directly, so dispatch that object
+      dispatch(addTask(result));
       onSubmit(result);
       onClose();
     } catch (error: any) {
