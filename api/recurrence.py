@@ -28,6 +28,30 @@ def parse_rrule(rrule_str: str, start_date: date) -> Optional[rrulestr]:
     except ValueError:
         return None
 
+def generate_assignments(
+    task: Task,
+    start_date: date,
+    end_date: date,
+    session: Session,
+) -> List[Assignment]:
+    """Generate assignments for a task over a date range.
+
+    This is a thin wrapper around :py:meth:`Task.generate_assignments` used by
+    the test suite. It delegates the actual generation logic to the model
+    method so that tests can import a single helper from ``api.recurrence``.
+
+    Args:
+        task: The task to generate assignments for.
+        start_date: The first date to consider when generating assignments.
+        end_date: The last date to consider when generating assignments.
+        session: Database session for persisting assignments.
+
+    Returns:
+        A list of generated ``Assignment`` objects.
+    """
+
+    return task.generate_assignments(start_date, end_date, session)
+
 def extend_assignment_horizon(
     session: Session,
     horizon_weeks: int = DEFAULT_HORIZON_WEEKS
