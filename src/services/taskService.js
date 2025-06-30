@@ -13,6 +13,16 @@ export const createTask = async (taskData) => {
 };
 
 /**
+ * Deletes a task
+ * @param {number} taskId - The ID of the task to delete
+ * @returns {Promise} Promise resolving to the deleted task confirmation
+ */
+export const deleteTask = async (taskId) => {
+  const response = await axios.delete(`${API_BASE_URL}/tasks/${taskId}`);
+  return response.data;
+};
+
+/**
  * Updates an existing task
  * @param {number} taskId - The ID of the task to update
  * @param {Object} taskData - The updated task data

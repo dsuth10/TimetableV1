@@ -16,6 +16,9 @@
 4. Absence management
 5. Status tracking
 6. Teacher request system
+7. Teacher Aide Management
+8. Availability Management
+9. School Class Management
 
 ## Database Schema
 
@@ -32,18 +35,20 @@ CREATE TABLE teacher_aide (
 
 ### Task
 ```sql
-CREATE TABLE task (
+CREATE TABLE tasks (
     id INTEGER PRIMARY KEY,
     title VARCHAR(200) NOT NULL,
-    category ENUM('PLAYGROUND', 'CLASS_SUPPORT', 'GROUP_SUPPORT', 'INDIVIDUAL_SUPPORT') NOT NULL,
+    category VARCHAR(50) NOT NULL, -- Changed from ENUM to VARCHAR
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
     recurrence_rule VARCHAR(200),
     expires_on DATE,
-    classroom_id INTEGER REFERENCES classroom(id),
+    classroom_id INTEGER REFERENCES classrooms(id), -- Changed to classrooms
+    school_class_id INTEGER REFERENCES school_classes(id), -- Added
     notes TEXT,
-    status ENUM('UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETE') NOT NULL,
+    status VARCHAR(20) NOT NULL, -- Changed from ENUM to VARCHAR
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_flexible BOOLEAN DEFAULT FALSE, -- Added
     CHECK (start_time < end_time),
     CHECK (start_time >= '08:00' AND end_time <= '16:00')
 );
@@ -53,7 +58,7 @@ CREATE TABLE task (
 ```sql
 CREATE TABLE assignment (
     id INTEGER PRIMARY KEY,
-    task_id INTEGER NOT NULL REFERENCES task(id),
+    task_id INTEGER NOT NULL REFERENCES tasks(id), -- Changed to tasks
     aide_id INTEGER REFERENCES teacher_aide(id),
     date DATE NOT NULL,
     start_time TIME NOT NULL,
@@ -76,6 +81,31 @@ CREATE TABLE absence (
 );
 ```
 
+### Classroom
+```sql
+CREATE TABLE classrooms ( -- Changed table name to plural
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    capacity INTEGER,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(name) -- Added unique constraint
+);
+```
+
+### SchoolClass
+```sql
+CREATE TABLE school_classes ( -- Added new table
+    id INTEGER PRIMARY KEY,
+    class_code VARCHAR(50) UNIQUE NOT NULL,
+    grade VARCHAR(50) NOT NULL,
+    teacher VARCHAR(100) NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
 ## API Endpoints
 
 ### Tasks
@@ -85,27 +115,31 @@ interface TaskListResponse {
     tasks: Array<{
         id: number;
         title: string;
-        category: 'PLAYGROUND' | 'CLASS_SUPPORT' | 'GROUP_SUPPORT' | 'INDIVIDUAL_SUPPORT';
+        category: string; // Changed to string
         start_time: string; // HH:mm format
         end_time: string;
         recurrence_rule?: string;
         expires_on?: string;
         classroom_id?: number;
+        school_class_id?: number; // Added
         notes?: string;
-        status: 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETE';
+        status: string; // Changed to string
+        is_flexible: boolean; // Added
     }>;
 }
 
 // POST /api/tasks
 interface CreateTaskRequest {
     title: string;
-    category: 'PLAYGROUND' | 'CLASS_SUPPORT' | 'GROUP_SUPPORT' | 'INDIVIDUAL_SUPPORT';
+    category: string; // Changed to string
     start_time: string;
     end_time: string;
     recurrence_rule?: string;
     expires_on?: string;
     classroom_id?: number;
+    school_class_id?: number; // Added
     notes?: string;
+    is_flexible?: boolean; // Added
 }
 ```
 
@@ -181,11 +215,13 @@ List all tasks with optional filtering.
 Query Parameters:
 ```typescript
 interface TaskListQuery {
-    status?: 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETE';
-    category?: 'PLAYGROUND' | 'CLASS_SUPPORT' | 'GROUP_SUPPORT' | 'INDIVIDUAL_SUPPORT';
+    status?: string; // Changed to string
+    category?: string; // Changed to string
     start_date?: string; // YYYY-MM-DD
     end_date?: string;   // YYYY-MM-DD
     classroom_id?: number;
+    school_class_id?: number; // Added
+    is_flexible?: boolean; // Added
 }
 ```
 
@@ -195,16 +231,18 @@ interface TaskListResponse {
     tasks: Array<{
         id: number;
         title: string;
-        category: 'PLAYGROUND' | 'CLASS_SUPPORT' | 'GROUP_SUPPORT' | 'INDIVIDUAL_SUPPORT';
+        category: string; // Changed to string
         start_time: string; // HH:mm format
         end_time: string;
         recurrence_rule?: string;
         expires_on?: string;
         classroom_id?: number;
+        school_class_id?: number; // Added
         notes?: string;
-        status: 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETE';
+        status: string; // Changed to string
         created_at: string; // ISO 8601
         updated_at: string; // ISO 8601
+        is_flexible: boolean; // Added
     }>;
     pagination: {
         total: number;
@@ -227,13 +265,15 @@ Request:
 ```typescript
 interface CreateTaskRequest {
     title: string;
-    category: 'PLAYGROUND' | 'CLASS_SUPPORT' | 'GROUP_SUPPORT' | 'INDIVIDUAL_SUPPORT';
+    category: string; // Changed to string
     start_time: string; // HH:mm format
     end_time: string;
     recurrence_rule?: string; // iCal RRULE format
     expires_on?: string;      // YYYY-MM-DD
     classroom_id?: number;
+    school_class_id?: number; // Added
     notes?: string;
+    is_flexible?: boolean; // Added
 }
 ```
 
@@ -417,6 +457,228 @@ interface DeleteAbsenceResponse {
 }
 ```
 
+### Teacher Aide API (Added)
+
+#### GET /api/teacher-aides
+List all teacher aides.
+
+Response:
+```typescript
+interface TeacherAideListResponse {
+    aides: Array<{
+        id: number;
+        name: string;
+        qualifications?: string;
+        colour_hex: string;
+        created_at: string;
+        updated_at: string;
+    }>;
+}
+```
+
+#### POST /api/teacher-aides
+Create a new teacher aide.
+
+Request:
+```typescript
+interface CreateTeacherAideRequest {
+    name: string;
+    qualifications?: string;
+    colour_hex: string;
+}
+```
+
+Response:
+```typescript
+interface CreateTeacherAideResponse {
+    aide: {
+        id: number;
+        name: string;
+        qualifications?: string;
+        colour_hex: string;
+        created_at: string;
+        updated_at: string;
+    };
+}
+```
+
+#### GET /api/teacher-aides/{id}
+Get a specific teacher aide by ID.
+
+#### PUT /api/teacher-aides/{id}
+Update a specific teacher aide by ID.
+
+#### DELETE /api/teacher-aides/{id}
+Delete a specific teacher aide by ID.
+
+### Availability API (Added)
+
+#### GET /api/teacher-aides/{aide_id}/availability
+List availability for a specific teacher aide.
+
+Response:
+```typescript
+interface AvailabilityListResponse {
+    availabilities: Array<{
+        id: number;
+        aide_id: number;
+        weekday: string;
+        start_time: string; // HH:mm
+        end_time: string;   // HH:mm
+        created_at: string;
+    }>;
+}
+```
+
+#### POST /api/teacher-aides/{aide_id}/availability
+Create new availability for a specific teacher aide.
+
+Request:
+```typescript
+interface CreateAvailabilityRequest {
+    weekday: string; // MO, TU, WE, TH, FR
+    start_time: string; // HH:mm
+    end_time: string;   // HH:mm
+}
+```
+
+Response:
+```typescript
+interface CreateAvailabilityResponse {
+    availability: {
+        id: number;
+        aide_id: number;
+        weekday: string;
+        start_time: string;
+        end_time: string;
+        created_at: string;
+    };
+}
+```
+
+#### GET /api/teacher-aides/{aide_id}/availability/{avail_id}
+Get a specific availability record.
+
+#### PUT /api/teacher-aides/{aide_id}/availability/{avail_id}
+Update a specific availability record.
+
+#### DELETE /api/teacher-aides/{aide_id}/availability/{avail_id}
+Delete a specific availability record.
+
+### Classroom API (Added)
+
+#### GET /api/classrooms
+List all classrooms.
+
+Response:
+```typescript
+interface ClassroomListResponse {
+    classrooms: Array<{
+        id: number;
+        name: string;
+        capacity?: number;
+        notes?: string;
+        created_at: string;
+        updated_at: string;
+    }>;
+}
+```
+
+#### POST /api/classrooms
+Create a new classroom.
+
+Request:
+```typescript
+interface CreateClassroomRequest {
+    name: string;
+    capacity?: number;
+    notes?: string;
+}
+```
+
+Response:
+```typescript
+interface CreateClassroomResponse {
+    classroom: {
+        id: number;
+        name: string;
+        capacity?: number;
+        notes?: string;
+        created_at: string;
+        updated_at: string;
+    };
+}
+```
+
+#### GET /api/classrooms/{id}
+Get a specific classroom by ID.
+
+#### PUT /api/classrooms/{id}
+Update a specific classroom by ID.
+
+#### DELETE /api/classrooms/{id}
+Delete a specific classroom by ID.
+
+### School Class API (Added)
+
+#### GET /api/school-classes
+List all school classes.
+
+Response:
+```typescript
+interface SchoolClassListResponse {
+    school_classes: Array<{
+        id: number;
+        class_code: string;
+        grade: string;
+        teacher: string;
+        notes?: string;
+        created_at: string;
+        updated_at: string;
+    }>;
+}
+```
+
+#### POST /api/school-classes
+Create a new school class.
+
+Request:
+```typescript
+interface CreateSchoolClassRequest {
+    class_code: string;
+    grade: string;
+    teacher: string;
+    notes?: string;
+}
+```
+
+Response:
+```typescript
+interface CreateSchoolClassResponse {
+    school_class: {
+        id: number;
+        class_code: string;
+        grade: string;
+        teacher: string;
+        notes?: string;
+        created_at: string;
+        updated_at: string;
+    };
+}
+```
+
+#### POST /api/school-classes/bulk-upload
+Bulk upload school classes from a file.
+
+#### GET /api/school-classes/{id}
+Get a specific school class by ID.
+
+#### PUT /api/school-classes/{id}
+Update a specific school class by ID.
+
+#### DELETE /api/school-classes/{id}
+Delete a specific school class by ID.
+
 ### Webhooks
 
 The system can notify external systems of important events via webhooks.
@@ -431,7 +693,16 @@ type WebhookEvent =
     | 'absence.deleted'
     | 'task.created'
     | 'task.updated'
-    | 'task.deleted';
+    | 'task.deleted'
+    | 'teacher_aide.created' // Added
+    | 'teacher_aide.updated' // Added
+    | 'teacher_aide.deleted' // Added
+    | 'classroom.created'    // Added
+    | 'classroom.updated'    // Added
+    | 'classroom.deleted'    // Added
+    | 'school_class.created' // Added
+    | 'school_class.updated' // Added
+    | 'school_class.deleted';// Added
 ```
 
 #### Webhook Payload
@@ -1041,14 +1312,16 @@ This document expands the initial PRD by translating requirements into a concret
 | ----------------- | --------------- | -------------------------------------------------------------------- |
 | `id`              | int             | Primary key                                                          |
 | `title`           | string          | Short, human‑readable label (e.g. *Playground Duty – Year 3 Oval*)   |
-| `category`        | enum            | `PLAYGROUND`, `CLASS_SUPPORT`, `GROUP_SUPPORT`, `INDIVIDUAL_SUPPORT` |
+| `category`        | string          | `PLAYGROUND`, `CLASS_SUPPORT`, `GROUP_SUPPORT`, `INDIVIDUAL_SUPPORT` |
 | `start_time`      | time            | Local school time (08:00 ≤ t < 16:00)                                |
 | `end_time`        | time            | Exclusive upper bound                                                |
 | `recurrence_rule` | string nullable | iCal RRULE such as `FREQ=WEEKLY;BYDAY=MO,WE,FR` (null ↔ one‑off)     |
 | `expires_on`      | date nullable   | Final date for generating instances                                  |
 | `classroom_id`    | FK nullable     | Links to `Classroom` if relevant                                     |
+| `school_class_id` | FK nullable     | Links to `SchoolClass` if relevant                                   |
 | `notes`           | text            | Free‑form instructions                                               |
-| `status`          | enum            | `UNASSIGNED`, `ASSIGNED`, `IN_PROGRESS`, `COMPLETE`                  |
+| `status`          | string          | `UNASSIGNED`, `ASSIGNED`, `IN_PROGRESS`, `COMPLETE`                  |
+| `is_flexible`     | boolean         | Whether the task has flexible time/location requirements             |
 
 ### Assignment vs Task
 
@@ -1118,49 +1391,126 @@ class Availability(Base):
 ### Task
 ```python
 class Task(Base):
-    __tablename__ = 'task'
+    __tablename__ = 'tasks' # Changed table name to plural
     
     id = Column(Integer, primary_key=True)
     title = Column(String(200), nullable=False)
-    category = Column(
-        Enum('PLAYGROUND', 'CLASS_SUPPORT', 'GROUP_SUPPORT', 'INDIVIDUAL_SUPPORT'),
-        nullable=False
-    )
+    category = Column(String(50), nullable=False) # Changed to String
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
     recurrence_rule = Column(String(200))  # iCal RRULE format
     expires_on = Column(Date)
-    classroom_id = Column(Integer, ForeignKey('classroom.id'))
+    classroom_id = Column(Integer, ForeignKey('classrooms.id', ondelete='SET NULL')) # Changed to classrooms, added ondelete
+    school_class_id = Column(Integer, ForeignKey('school_classes.id', ondelete='SET NULL')) # Added
     notes = Column(Text)
-    status = Column(
-        Enum('UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETE'),
-        nullable=False,
-        default='UNASSIGNED'
-    )
+    status = Column(String(20), nullable=False, default='UNASSIGNED') # Changed to String
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
-
+    is_flexible = Column(Boolean, default=False) # Added
+    
     # Relationships
     classroom = relationship('Classroom', back_populates='tasks')
+    school_class = relationship('SchoolClass', back_populates='tasks') # Added
     assignments = relationship('Assignment', back_populates='task', cascade='all, delete-orphan')
 
-    def generate_assignments(self, start_date: date, end_date: date) -> List['Assignment']:
-        """Generate assignments for a date range based on recurrence rule."""
+    def generate_assignments(self, start_date: date, end_date: date, session=None) -> List['Assignment']:
+        """Generate assignments for this task between start_date and end_date.
+        
+        Args:
+            start_date: The start date for assignment generation
+            end_date: The end date for assignment generation
+            session: Optional database session to use
+            
+        Returns:
+            List of generated assignments
+        """
         if not self.recurrence_rule:
             return []
-        from dateutil.rrule import rrulestr
-        rule = rrulestr(self.recurrence_rule, dtstart=start_date)
-        dates = list(rule.between(start_date, end_date))
-        return [
-            Assignment(
-                task_id=self.id,
-                date=d,
-                start_time=self.start_time,
-                end_time=self.end_time,
-                status='UNASSIGNED'
-            )
-            for d in dates
-        ]
+            
+        try:
+            # Parse the recurrence rule
+            dt_start = datetime.combine(start_date, self.start_time)
+            rule = rrulestr(self.recurrence_rule, dtstart=dt_start)
+            
+            # Generate dates
+            dates = list(rule.between(
+                datetime.combine(start_date, self.start_time),
+                datetime.combine(end_date, self.end_time),
+                inc=True
+            ))
+            
+            # Create assignments
+            assignments = []
+            for dt in dates:
+                # Skip if before task's start date
+                if dt.date() < start_date:
+                    continue
+                # Skip if after task's end date
+                if self.expires_on and dt.date() > self.expires_on:
+                    continue
+                # Check if assignment already exists for this date
+                if session:
+                    existing = session.query(Assignment).filter_by(
+                        task_id=self.id,
+                        date=dt.date(),
+                        start_time=self.start_time,
+                        end_time=self.end_time
+                    ).first()
+                    if existing:
+                        continue
+                # Create assignment
+                assignment = Assignment(
+                    task_id=self.id,
+                    date=dt.date(),
+                    start_time=self.start_time,
+                    end_time=self.end_time,
+                    status='UNASSIGNED'
+                )
+                if session:
+                    session.add(assignment)
+                assignments.append(assignment)
+            if session:
+                session.flush()
+            return assignments
+            
+        except Exception as e:
+            raise ValueError(f"Invalid recurrence rule: {str(e)}")
+    
+    def update_future_assignments(self, session, old_recurrence: Optional[str] = None,
+                                old_start_time: Optional[time] = None,
+                                old_end_time: Optional[time] = None) -> int:
+        """Update future assignments based on changes to the task.
+        
+        Args:
+            session: The database session to use
+            old_recurrence: The previous recurrence rule
+            old_start_time: The previous start time
+            old_end_time: The previous end time
+            
+        Returns:
+            Number of assignments updated
+        """
+        # Get current date and calculate end date
+        start_date = date.today()
+        end_date = start_date + timedelta(weeks=4)
+        
+        # Get existing assignments in the date range
+        existing_assignments = session.query(Assignment).filter(
+            Assignment.task_id == self.id,
+            Assignment.date >= start_date,
+            Assignment.date <= end_date
+        ).all()
+        
+        # Delete existing assignments
+        for assignment in existing_assignments:
+            session.delete(assignment)
+        
+        # Generate new assignments if recurring
+        if self.recurrence_rule:
+            new_assignments = self.generate_assignments(start_date, end_date, session)
+            return len(new_assignments)
+        
+        return 0
 ```
 
 ### Assignment
@@ -1169,7 +1519,7 @@ class Assignment(Base):
     __tablename__ = 'assignment'
     
     id = Column(Integer, primary_key=True)
-    task_id = Column(Integer, ForeignKey('task.id'), nullable=False)
+    task_id = Column(Integer, ForeignKey('tasks.id'), nullable=False) # Changed to tasks
     aide_id = Column(Integer, ForeignKey('teacher_aide.id'))
     date = Column(Date, nullable=False)
     start_time = Column(Time, nullable=False)
@@ -1231,7 +1581,7 @@ class Absence(Base):
 ### Classroom
 ```python
 class Classroom(Base):
-    __tablename__ = 'classroom'
+    __tablename__ = 'classrooms' # Changed table name to plural
     
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
@@ -1244,17 +1594,40 @@ class Classroom(Base):
     tasks = relationship('Task', back_populates='classroom')
 ```
 
+### SchoolClass (Added)
+```python
+from sqlalchemy import Column, Integer, String, DateTime, Text, func, UniqueConstraint
+from sqlalchemy.orm import relationship
+from .base import Base
+
+class SchoolClass(Base):
+    __tablename__ = 'school_classes'
+    id = Column(Integer, primary_key=True)
+    class_code = Column(String(50), unique=True, nullable=False)
+    grade = Column(String(50), nullable=False)
+    teacher = Column(String(100), nullable=False)
+    notes = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+
+    # Relationships
+    tasks = relationship("Task", back_populates="school_class", cascade="all, delete-orphan")
+```
+
 ### Key Features
 1. **Relationships**: All models use SQLAlchemy relationships with appropriate cascade behaviors
 2. **Constraints**: 
    - Time slots must be within school hours (08:00-16:00)
    - No double-booking of aides
    - One absence per aide per date
+   - Unique class code for SchoolClass
+   - Unique classroom name for Classroom
 3. **Helper Methods**:
    - `is_available()`: Check aide availability
    - `generate_assignments()`: Create recurring task instances
    - `check_conflicts()`: Detect scheduling conflicts
    - `release_assignments()`: Handle absence impacts
+   - `update_future_assignments()`: Update assignments based on task changes
 
 ### Database Migrations
 The schema is managed using Alembic migrations, with the initial migration creating all tables with appropriate constraints and relationships.
@@ -1298,6 +1671,29 @@ The schema is managed using Alembic migrations, with the initial migration creat
 | POST   | `/api/assignments/batch`        | Create many (recurring)                          |
 | POST   | `/api/assignments/check`        | Collision probe (dry‑run)                        |
 | PATCH  | `/api/assignments/<id>`         | Update status or reassign                        |
+| POST   | `/api/assignments/extend-horizon` | Extend assignment generation horizon         |
+| GET    | `/api/health`                   | Health check endpoint                            |
+| GET    | `/api/teacher-aides`            | List teacher aides                               |
+| POST   | `/api/teacher-aides`            | Create teacher aide                              |
+| GET    | `/api/teacher-aides/<id>`       | Get teacher aide by ID                           |
+| PUT    | `/api/teacher-aides/<id>`       | Update teacher aide by ID                        |
+| DELETE | `/api/teacher-aides/<id>`       | Delete teacher aide by ID                        |
+| GET    | `/api/teacher-aides/<aide_id>/availability` | List aide availability                     |
+| POST   | `/api/teacher-aides/<aide_id>/availability` | Create aide availability                   |
+| GET    | `/api/teacher-aides/<aide_id>/availability/<avail_id>` | Get specific availability        |
+| PUT    | `/api/teacher-aides/<aide_id>/availability/<avail_id>` | Update specific availability     |
+| DELETE | `/api/teacher-aides/<aide_id>/availability/<avail_id>` | Delete specific availability     |
+| GET    | `/api/classrooms`               | List classrooms                                  |
+| POST   | `/api/classrooms`               | Create classroom                                 |
+| GET    | `/api/classrooms/<id>`          | Get classroom by ID                              |
+| PUT    | `/api/classrooms/<id>`          | Update classroom by ID                           |
+| DELETE | `/api/classrooms/<id>`          | Delete classroom by ID                           |
+| GET    | `/api/school-classes`           | List school classes                              |
+| POST   | `/api/school-classes`           | Create school class                              |
+| POST   | `/api/school-classes/bulk-upload` | Bulk upload school classes                     |
+| GET    | `/api/school-classes/<id>`      | Get school class by ID                           |
+| PUT    | `/api/school-classes/<id>`      | Update school class by ID                        |
+| DELETE | `/api/school-classes/<id>`      | Delete school class by ID                        |
 
 ## 7 Recurrence Engine
 
@@ -1324,6 +1720,7 @@ The schema is managed using Alembic migrations, with the initial migration creat
 6. **Conflict Modal** – wire to `/check` endpoint.
 7. **Recurring Workflow** – task creation wizard & batch endpoint.
 8. **Polish** – colour legend, keyboard shortcuts, accessibility labels.
+9. **School Class Management** - CRUD for school classes and integration with tasks.
 
 ## 10 Future Enhancements (Post‑MVP)
 
@@ -1376,7 +1773,7 @@ This specification consolidates all functional behaviour expected for the **Teac
 
 ### 3.4 Task
 
-* `title`, `category` (`PLAYGROUND`, `CLASS_SUPPORT`, `GROUP_SUPPORT`, `INDIVIDUAL_SUPPORT`), `start_time`, `end_time`, `recurrence_rule?`, `expires_on?`, `classroom_id?`, `notes`, `status`
+* `title`, `category` (`PLAYGROUND`, `CLASS_SUPPORT`, `GROUP_SUPPORT`, `INDIVIDUAL_SUPPORT`), `start_time`, `end_time`, `recurrence_rule?`, `expires_on?`, `classroom_id?`, `school_class_id?` (Added), `notes`, `status`, `is_flexible` (Added)
 
 ### 3.5 Assignment
 
@@ -1386,6 +1783,10 @@ This specification consolidates all functional behaviour expected for the **Teac
 ### 3.6 Absence
 
 * `aide_id`, `date`, `reason?`
+
+### 3.7 SchoolClass (Added)
+
+* `id`, `class_code`, `grade`, `teacher`, `notes`
 
 ## 4 Functional Modules
 
@@ -1430,12 +1831,37 @@ This specification consolidates all functional behaviour expected for the **Teac
 * Teacher submits form (title, category, date, times, notes).
 * Generates *UNASSIGNED* task awaiting admin approval & scheduling.
 
+### 4.7 School Class Management (Added)
+
+* Admin can create, edit, and delete school classes.
+* School classes can be linked to tasks.
+* Bulk upload functionality for school classes.
+
 ## 5 REST API Endpoints
 
 | Method | Path                            | Purpose                                      |
 | ------ | ------------------------------- | -------------------------------------------- |
 | GET    | `/api/teacher-aides`            | List aides                                   |
 | POST   | `/api/teacher-aides`            | Create aide                                  |
+| GET    | `/api/teacher-aides/<id>`       | Get aide by ID                               |
+| PUT    | `/api/teacher-aides/<id>`       | Update aide by ID                            |
+| DELETE | `/api/teacher-aides/<id>`       | Delete aide by ID                            |
+| GET    | `/api/teacher-aides/<aide_id>/availability` | List aide availability                     |
+| POST   | `/api/teacher-aides/<aide_id>/availability` | Create aide availability                   |
+| GET    | `/api/teacher-aides/<aide_id>/availability/<avail_id>` | Get specific availability        |
+| PUT    | `/api/teacher-aides/<aide_id>/availability/<avail_id>` | Update specific availability     |
+| DELETE | `/api/teacher-aides/<aide_id>/availability/<avail_id>` | Delete specific availability     |
+| GET    | `/api/classrooms`               | List classrooms                                  |
+| POST   | `/api/classrooms`               | Create classroom                                 |
+| GET    | `/api/classrooms/<id>`          | Get classroom by ID                              |
+| PUT    | `/api/classrooms/<id>`          | Update classroom by ID                           |
+| DELETE | `/api/classrooms/<id>`          | Delete classroom by ID                           |
+| GET    | `/api/school-classes`           | List school classes                              |
+| POST   | `/api/school-classes`           | Create school class                              |
+| POST   | `/api/school-classes/bulk-upload` | Bulk upload school classes                     |
+| GET    | `/api/school-classes/<id>`      | Get school class by ID                           |
+| PUT    | `/api/school-classes/<id>`      | Update school class by ID                        |
+| DELETE | `/api/school-classes/<id>`      | Delete school class by ID                        |
 | GET    | `/api/tasks`                    | List tasks (filters: status, date, category) |
 | POST   | `/api/tasks`                    | Create task                                  |
 | POST   | `/api/recurring-tasks`          | Create recurring                             |
@@ -1444,8 +1870,10 @@ This specification consolidates all functional behaviour expected for the **Teac
 | POST   | `/api/assignments/batch`        | Assign many                                  |
 | POST   | `/api/assignments/check`        | Collision dry‑run                            |
 | PATCH  | `/api/assignments/<id>`         | Update status or move                        |
+| POST   | `/api/assignments/extend-horizon` | Extend assignment generation horizon         |
 | POST   | `/api/absences`                 | Mark absence                                 |
 | DELETE | `/api/absences/<id>`            | Remove absence                               |
+| GET    | `/health`                       | Health check endpoint                            |
 
 All endpoints return JSON and follow standard HTTP status codes.
 
@@ -1468,7 +1896,7 @@ All endpoints return JSON and follow standard HTTP status codes.
 
 * **Form Validation**: times within school hours, `end_time` > `start_time`.
 * **Collision Response**: API 409 with conflicting assignment details.
-* **Unique Constraints**: One absence per aide per date; tasks cannot overlap a single assignment.
+* **Unique Constraints**: One absence per aide per date; tasks cannot overlap a single assignment; unique class code; unique classroom name.
 
 ## 8 Non‑Functional Requirements
 
@@ -1482,7 +1910,7 @@ All endpoints return JSON and follow standard HTTP status codes.
 2. Push notifications (PWA, e‑mail digests).
 3. Reporting dashboard with CSV/PDF export.
 4. Half‑day absences, annual leave sync.
-5. Mobile responsive compact view.
+5. Mobile‑responsive timetable (CSS Grid with swipe).
 
 ## 10 Acceptance Criteria Summary
 
@@ -1491,6 +1919,7 @@ All endpoints return JSON and follow standard HTTP status codes.
 3. Marking an aide absent re‑queues their day's assignments ✔️
 4. Timetable shows correct data & visual states (assigned, unassigned, absent, completed) ✔️
 5. Aides can update status via click ✔️
+6. Admin can manage teacher aides, availabilities, classrooms, and school classes. ✔️
 
 ## 11 Open Questions
 
@@ -1499,6 +1928,3 @@ All endpoints return JSON and follow standard HTTP status codes.
 3. Any colour‑blind‑safe palette requirements?
 
 *Prepared 04 June 2025 – All timelines and field names in this draft are illustrative.*
-
-
-

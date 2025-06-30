@@ -6,9 +6,10 @@ import { store } from './store';
 import Layout from './components/Layout';
 import Schedule from './components/Schedule';
 import AideManagement from './pages/AideManagement';
-import TaskManagement from './pages/TaskManagement';
+import TaskManagement from './pages/TaskManagement.tsx';
 import Settings from './pages/Settings';
-import ClassManagement from './pages/ClassManagement'; // Import the new component
+import ClassManagement from './pages/ClassManagement';
+import TeacherRequestForm from './pages/TeacherRequestForm';
 
 function App() {
   return (
@@ -19,7 +20,8 @@ function App() {
             <Route path="/" element={<Schedule />} />
             <Route path="/aides" element={<AideManagement />} />
             <Route path="/tasks" element={<TaskManagement />} />
-            <Route path="/classes" element={<ClassManagement />} /> {/* New route for Class Management */}
+            <Route path="/classes" element={<ClassManagement />} />
+            <Route path="/requests" element={<TeacherRequestForm />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </Layout>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import dayjs, { Dayjs } from 'dayjs';
 import { useDispatch } from 'react-redux';
 import {
   Dialog,
@@ -15,90 +16,119 @@ import {
   Typography,
   Alert,
   CircularProgress,
+  SelectChangeEvent, // Import SelectChangeEvent
 } from '@mui/material';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import { PickerChangeHandlerContext, TimeValidationError } from '@mui/x-date-pickers/models'; // Import PickerChangeHandlerContext and TimeValidationError
 import RecurrenceOptions from './RecurrenceOptions';
 import { validateTaskForm } from './validation';
-import { createTask, getClassrooms, getSchoolClasses, previewRecurringTask } from '../../services/taskService'; // Import getSchoolClasses
+import { createTask, getSchoolClasses, previewRecurringTask } from '../../services/taskService'; // Import previewRecurringTask
 import { addTask } from '../../store/slices/tasksSlice';
+import { Task } from '../../types/task'; // Import Task type
 
-const TaskCreationModal = ({ open, onClose, onSubmit }) => {
+interface TaskCreationModalProps {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (result: any) => void; // Adjust 'any' to a more specific type if available
+}
+
+interface SchoolClass {
+  id: number;
+  class_code: string;
+  teacher: string;
+}
+
+interface TaskFormData {
+  title: string;
+  category: string;
+  startTime: Dayjs | null;
+  endTime: Dayjs | null;
+  schoolClassId: number | '';
+  notes: string;
+  isRecurring: boolean;
+  selectedDays: string[];
+  expiresOn: Dayjs | null;
+}
+
+interface TaskFormErrors {
+  title?: string;
+  category?: string;
+  startTime?: string;
+  endTime?: string;
+  selectedDays?: string;
+}
+
+const TaskCreationModal: React.FC<TaskCreationModalProps> = ({ open, onClose, onSubmit }) => {
   const dispatch = useDispatch();
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<TaskFormData>({
     title: '',
     category: '',
     startTime: null,
     endTime: null,
-    classroomId: '',
-    schoolClassId: '', // New state for school_class_id
+    schoolClassId: '',
     notes: '',
     isRecurring: false,
     selectedDays: [],
     expiresOn: null,
   });
 
-  const [errors, setErrors] = useState({});
-  const [classrooms, setClassrooms] = useState([]);
-  const [schoolClasses, setSchoolClasses] = useState([]); // New state for school classes
+  const [errors, setErrors] = useState<TaskFormErrors>({});
+  const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>([]);
   const [loading, setLoading] = useState(false);
-  const [previewData, setPreviewData] = useState(null);
-  const [apiError, setApiError] = useState(null);
+  const [previewData, setPreviewData] = useState<any>(null); // Re-add previewData
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const classroomData = await getClassrooms();
-        setClassrooms(Array.isArray(classroomData) ? classroomData : []);
-
         const schoolClassData = await getSchoolClasses(); // Fetch school classes
         setSchoolClasses(Array.isArray(schoolClassData) ? schoolClassData : []);
       } catch (error) {
         console.error('Failed to fetch data:', error);
-        setApiError('Failed to load data (classrooms or school classes)');
-        setClassrooms([]);
+        setApiError('Failed to load data (school classes)');
         setSchoolClasses([]);
       }
     };
 
-    if (open) {
-      fetchData();
-    }
-  }, [open]);
+  if (open) {
+    fetchData();
+  }
+}, [open]);
 
-  const handleChange = (field) => (event) => {
+  const handleChange = (field: keyof TaskFormData) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<string | number>) => {
     setFormData({
       ...formData,
-      [field]: event.target.value,
+      [field]: event.target.value as any, // Cast to any to handle mixed types (string | number)
     });
     // Clear error when field is modified
-    if (errors[field]) {
-      setErrors({ ...errors, [field]: null });
+    if (errors[field as keyof TaskFormErrors]) {
+      setErrors({ ...errors, [field as keyof TaskFormErrors]: undefined });
     }
   };
 
-  const handleTimeChange = (field) => (newValue) => {
+  const handleTimeChange = (field: 'startTime' | 'endTime') => (newValue: any, context: PickerChangeHandlerContext<TimeValidationError>) => {
     setFormData({
       ...formData,
-      [field]: newValue,
+      [field]: newValue as Dayjs | null, // Explicitly cast newValue to Dayjs | null
     });
     // Clear error when field is modified
-    if (errors[field]) {
-      setErrors({ ...errors, [field]: null });
+    if (errors[field as keyof TaskFormErrors]) {
+      setErrors({ ...errors, [field as keyof TaskFormErrors]: undefined });
     }
   };
 
-  const handleRecurrenceChange = (newValue) => {
+  const handleRecurrenceChange = (newValue: {isRecurring: boolean, selectedDays: string[], expiresOn: Dayjs | null}) => {
     setFormData({
       ...formData,
       ...newValue,
     });
     // Clear error when field is modified
     if (errors.selectedDays) {
-      setErrors({ ...errors, selectedDays: null });
+      setErrors({ ...errors, selectedDays: undefined });
     }
   };
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setApiError(null);
     
@@ -115,20 +145,19 @@ const TaskCreationModal = ({ open, onClose, onSubmit }) => {
       const apiData = {
         title: formData.title,
         category: formData.category,
-        start_time: formData.startTime ? formData.startTime.toLocaleTimeString('en-US', { hour12: false }) : null,
-        end_time: formData.endTime ? formData.endTime.toLocaleTimeString('en-US', { hour12: false }) : null,
-        classroom_id: formData.classroomId || null,
-        school_class_id: formData.schoolClassId || null, // Include school_class_id
+        start_time: formData.startTime ? formData.startTime.format('HH:mm') : '',
+        end_time: formData.endTime ? formData.endTime.format('HH:mm') : '',
+        school_class_id: formData.schoolClassId || null,
         notes: formData.notes || null,
         recurrence_rule: formData.isRecurring ? `FREQ=WEEKLY;BYDAY=${formData.selectedDays.join(',')}` : null,
-        expires_on: formData.isRecurring && formData.expiresOn ? formData.expiresOn.toISOString().split('T')[0] : null,
+        expires_on: formData.isRecurring && formData.expiresOn ? formData.expiresOn.format('YYYY-MM-DD') : null,
       };
 
-      const result = await createTask(apiData);
-      dispatch(addTask(result.task));  // Add the new task to the store
+      const result = await createTask(apiData); // Always call createTask
+      dispatch(addTask(result.task));
       onSubmit(result);
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       setApiError(error.response?.data?.message || 'Failed to create task');
     } finally {
       setLoading(false);
@@ -141,11 +170,11 @@ const TaskCreationModal = ({ open, onClose, onSubmit }) => {
     try {
       const apiData = {
         ...formData,
-        start_time: formData.startTime ? formData.startTime.toLocaleTimeString('en-US', { hour12: false }) : null,
-        end_time: formData.endTime ? formData.endTime.toLocaleTimeString('en-US', { hour12: false }) : null,
+        start_time: formData.startTime ? formData.startTime.format('HH:mm') : null,
+        end_time: formData.endTime ? formData.endTime.format('HH:mm') : null,
         recurrence_rule: {
           days: formData.selectedDays,
-          expires_on: formData.expiresOn ? formData.expiresOn.toISOString().split('T')[0] : null,
+          expires_on: formData.expiresOn ? formData.expiresOn.format('YYYY-MM-DD') : null,
         },
       };
 
@@ -224,27 +253,11 @@ const TaskCreationModal = ({ open, onClose, onSubmit }) => {
               />
             </Box>
 
-            <FormControl fullWidth>
-              <InputLabel>Classroom</InputLabel>
-              <Select
-                value={formData.classroomId}
-                onChange={handleChange('classroomId')}
-                label="Classroom"
-              >
-                <MenuItem value=""><em>None</em></MenuItem>
-                {classrooms.map((classroom) => (
-                  <MenuItem key={classroom.id} value={classroom.id}>
-                    {classroom.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
             {/* New School Class Dropdown */}
             <FormControl fullWidth>
               <InputLabel>School Class</InputLabel>
               <Select
-                value={formData.schoolClassId}
+                value={formData.schoolClassId as number | string}
                 onChange={handleChange('schoolClassId')}
                 label="School Class"
               >
@@ -298,6 +311,7 @@ const TaskCreationModal = ({ open, onClose, onSubmit }) => {
             variant="contained"
             color="primary"
             disabled={loading}
+            onClick={() => console.log('Create Task button clicked!')}
           >
             {loading ? <CircularProgress size={24} /> : 'Create Task'}
           </Button>

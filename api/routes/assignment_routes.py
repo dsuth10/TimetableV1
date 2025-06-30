@@ -151,8 +151,11 @@ class AssignmentResource(Resource):
                     return error_response('VALIDATION_ERROR', 'Invalid date format. Use YYYY-MM-DD', 422)
             
             if 'status' in data:
-                if data['status'] not in ['ASSIGNED', 'COMPLETED', 'CANCELLED']:
-                    return error_response('VALIDATION_ERROR', 'Invalid status', 422)
+                # Validate status against allowed Assignment statuses
+                from api.models import Assignment # Import Assignment model here to avoid circular import
+                allowed_statuses = [s.value for s in Assignment.AssignmentStatus]
+                if data['status'] not in allowed_statuses:
+                    return error_response('VALIDATION_ERROR', f"Invalid status: {data['status']}. Allowed statuses are {', '.join(allowed_statuses)}", 422)
                 assignment.status = data['status']
             
             session.commit()

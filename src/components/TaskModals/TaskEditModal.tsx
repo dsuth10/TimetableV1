@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import dayjs from 'dayjs';
 import {
   Dialog,
   DialogTitle,
@@ -17,10 +18,10 @@ import {
 } from '@mui/material';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'; // Use AdapterDayjs
 import RecurrenceOptions from './RecurrenceOptions';
 import { validateTaskForm } from './validation';
-import { updateTask, getClassrooms, previewRecurringTask } from '../../services/taskService';
+import { updateTask, getClassrooms, getSchoolClasses, previewRecurringTask } from '../../services/taskService'; // Added getSchoolClasses
 
 const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
   const [formData, setFormData] = useState({
@@ -29,6 +30,7 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
     startTime: null,
     endTime: null,
     classroomId: '',
+    schoolClassId: '', // New state for school_class_id
     notes: '',
     isRecurring: false,
     selectedDays: [],
@@ -37,22 +39,29 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
 
   const [errors, setErrors] = useState({});
   const [classrooms, setClassrooms] = useState([]);
+  const [schoolClasses, setSchoolClasses] = useState([]); // New state for school classes
   const [loading, setLoading] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [apiError, setApiError] = useState(null);
 
   useEffect(() => {
-    const fetchClassrooms = async () => {
+    const fetchData = async () => {
       try {
-        const data = await getClassrooms();
-        setClassrooms(data);
+        const classroomData = await getClassrooms();
+        setClassrooms(Array.isArray(classroomData) ? classroomData : []);
+
+        const schoolClassData = await getSchoolClasses(); // Fetch school classes
+        setSchoolClasses(Array.isArray(schoolClassData) ? schoolClassData : []);
       } catch (error) {
-        setApiError('Failed to load classrooms');
+        console.error('Failed to fetch data:', error);
+        setApiError('Failed to load data (classrooms or school classes)');
+        setClassrooms([]);
+        setSchoolClasses([]);
       }
     };
 
     if (open) {
-      fetchClassrooms();
+      fetchData();
     }
   }, [open]);
 
@@ -72,18 +81,19 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
         if (untilMatch && untilMatch[1]) {
           // Parse UNTIL date (e.g., 20250630T235959Z)
           const dateStr = untilMatch[1].substring(0, 4) + '-' + untilMatch[1].substring(4, 6) + '-' + untilMatch[1].substring(6, 8);
-          expiresOn = new Date(dateStr);
+          expiresOn = dayjs(dateStr);
         } else if (task.expires_on) { // Fallback to expires_on if UNTIL not in rule
-          expiresOn = new Date(task.expires_on);
+          expiresOn = dayjs(task.expires_on);
         }
       }
 
       setFormData({
         title: task.title || '',
         category: task.category || '',
-        startTime: task.start_time ? new Date(`2000-01-01T${task.start_time}`) : null,
-        endTime: task.end_time ? new Date(`2000-01-01T${task.end_time}`) : null,
+        startTime: task.start_time ? dayjs(`2000-01-01T${task.start_time}`) : null,
+        endTime: task.end_time ? dayjs(`2000-01-01T${task.end_time}`) : null,
         classroomId: task.classroom_id || '',
+        schoolClassId: task.school_class_id || '', // Include school_class_id
         notes: task.notes || '',
         isRecurring: isRecurring,
         selectedDays: selectedDays,
@@ -142,12 +152,13 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
       const apiData = {
         title: formData.title,
         category: formData.category,
-        start_time: formData.startTime ? formData.startTime.toLocaleTimeString('en-US', { hour12: false }) : null,
-        end_time: formData.endTime ? formData.endTime.toLocaleTimeString('en-US', { hour12: false }) : null,
+        start_time: formData.startTime ? formData.startTime.format('HH:mm') : null,
+        end_time: formData.endTime ? formData.endTime.format('HH:mm') : null,
         classroom_id: formData.classroomId || null,
+        school_class_id: formData.schoolClassId || null, // Include school_class_id
         notes: formData.notes || null,
-        recurrence_rule: formData.isRecurring ? `FREQ=WEEKLY;BYDAY=${formData.selectedDays.join(',')}${formData.expiresOn ? `;UNTIL=${formData.expiresOn.toISOString().replace(/[-:]|\.\d{3}/g, '')}` : ''}` : null,
-        expires_on: formData.isRecurring && formData.expiresOn ? formData.expiresOn.toISOString().split('T')[0] : null,
+        recurrence_rule: formData.isRecurring ? `FREQ=WEEKLY;BYDAY=${formData.selectedDays.join(',')}${formData.expiresOn ? `;UNTIL=${formData.expiresOn.format('YYYYMMDD')}T235959Z` : ''}` : null,
+        expires_on: formData.isRecurring && formData.expiresOn ? formData.expiresOn.format('YYYY-MM-DD') : null,
       };
 
       const result = await updateTask(task.id, apiData);
@@ -166,9 +177,9 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
     try {
       const apiData = {
         ...formData,
-        start_time: formData.startTime ? formData.startTime.toLocaleTimeString('en-US', { hour12: false }) : null,
-        end_time: formData.endTime ? formData.endTime.toLocaleTimeString('en-US', { hour12: false }) : null,
-        recurrence_rule: `FREQ=WEEKLY;BYDAY=${formData.selectedDays.join(',')}${formData.expiresOn ? `;UNTIL=${formData.expiresOn.toISOString().replace(/[-:]|\.\d{3}/g, '')}` : ''}`,
+        start_time: formData.startTime ? formData.startTime.format('HH:mm') : null,
+        end_time: formData.endTime ? formData.endTime.format('HH:mm') : null,
+        recurrence_rule: `FREQ=WEEKLY;BYDAY=${formData.selectedDays.join(',')}${formData.expiresOn ? `;UNTIL=${formData.expiresOn.format('YYYYMMDD')}T235959Z` : ''}`,
       };
 
       const preview = await previewRecurringTask(apiData);
@@ -225,7 +236,7 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
               )}
             </FormControl>
 
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
+            <LocalizationProvider dateAdapter={AdapterDayjs}>
               <Box sx={{ display: 'flex', gap: 2 }}>
                 <TimePicker
                   label="Start Time"
@@ -261,9 +272,27 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
                 onChange={handleChange('classroomId')}
                 label="Classroom"
               >
+                <MenuItem value=""><em>None</em></MenuItem>
                 {classrooms.map((classroom) => (
                   <MenuItem key={classroom.id} value={classroom.id}>
                     {classroom.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            {/* New School Class Dropdown */}
+            <FormControl fullWidth>
+              <InputLabel>School Class</InputLabel>
+              <Select
+                value={formData.schoolClassId}
+                onChange={handleChange('schoolClassId')}
+                label="School Class"
+              >
+                <MenuItem value=""><em>None</em></MenuItem>
+                {schoolClasses.map((schoolClass) => (
+                  <MenuItem key={schoolClass.id} value={schoolClass.id}>
+                    {schoolClass.class_code} ({schoolClass.teacher})
                   </MenuItem>
                 ))}
               </Select>

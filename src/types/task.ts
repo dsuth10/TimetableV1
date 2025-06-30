@@ -2,12 +2,24 @@ export interface Task {
   id: number;
   title: string;
   category: string;
-  startTime?: string;      // Optional - for time-constrained tasks
-  endTime?: string;        // Optional - for time-constrained tasks
-  duration: number;        // Duration in minutes
-  isTimeConstrained: boolean;
-  classroomId?: number;
+  start_time: string;
+  end_time: string;
+  recurrence_rule?: string;
+  expires_on?: string;
+  classroom_id?: number;
+  school_class_id?: number;
   notes?: string;
+  status: string;
+  is_flexible: boolean;
+  classroom?: {
+    id: number;
+    name: string;
+  };
+  school_class?: {
+    id: number;
+    class_code: string;
+    teacher: string;
+  };
 }
 
 export interface Assignment {
@@ -17,4 +29,4 @@ export interface Assignment {
   day: string;
   startTime: string;
   duration: number;
-} 
+}

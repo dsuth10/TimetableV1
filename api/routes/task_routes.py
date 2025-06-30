@@ -18,8 +18,11 @@ class TaskListResource(Resource):
             page = int(request.args.get('page', 1))
             per_page = int(request.args.get('per_page', 20))
             
-            # Build query, eagerly load school_class
-            query = session.query(Task).options(joinedload(Task.school_class))
+            # Build query, eagerly load classroom and school_class
+            query = session.query(Task).options(
+                joinedload(Task.classroom),
+                joinedload(Task.school_class)
+            )
             
             if status:
                 query = query.filter(Task.status == status)
@@ -113,7 +116,10 @@ class TaskResource(Resource):
     def get(self, task_id):
         session = next(get_db())
         try:
-            task = session.query(Task).options(joinedload(Task.school_class)).get(task_id) # Eagerly load school_class
+            task = session.query(Task).options(
+                joinedload(Task.classroom),
+                joinedload(Task.school_class)
+            ).get(task_id)
             if not task:
                 return error_response('NOT_FOUND', f'Task {task_id} not found', 404)
             return serialize_task(task), 200

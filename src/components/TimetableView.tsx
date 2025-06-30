@@ -1,25 +1,43 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Droppable, Draggable } from 'react-beautiful-dnd';
-import { Box, Grid, Paper, Typography, CircularProgress } from '@mui/material';
+import { Box, Grid, Paper, Typography, CircularProgress, Menu, MenuItem } from '@mui/material';
 import { Assignment } from 'types/assignment';
 
-interface TeacherAide {
-  id: number;
-  name: string;
-  email: string;
-  status: 'ACTIVE' | 'INACTIVE';
-}
+import { TeacherAide } from 'types';
 
 interface TimetableViewProps {
   assignments: Assignment[];
   teacherAides: TeacherAide[];
   isLoading: boolean;
+  onUpdateAssignmentStatus: (assignmentId: number, status: Assignment['status']) => void;
 }
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const TIME_SLOTS = ['8:00', '9:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00'];
 
-const TimetableView: React.FC<TimetableViewProps> = ({ assignments = [], teacherAides = [], isLoading }) => {
+const TimetableView: React.FC<TimetableViewProps> = ({ assignments = [], teacherAides = [], isLoading, onUpdateAssignmentStatus }) => {
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+  const open = Boolean(anchorEl);
+
+  const handleRightClick = (event: React.MouseEvent<HTMLDivElement>, assignment: Assignment) => {
+    event.preventDefault(); // Prevent default context menu
+    setAnchorEl(event.currentTarget);
+    setSelectedAssignment(assignment);
+  };
+
+  const handleClose = () => {
+    setAnchorEl(null);
+    setSelectedAssignment(null);
+  };
+
+  const handleStatusChange = (status: Assignment['status']) => {
+    if (selectedAssignment) {
+      onUpdateAssignmentStatus(selectedAssignment.id, status);
+    }
+    handleClose();
+  };
+
   if (isLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
@@ -101,13 +119,18 @@ const TimetableView: React.FC<TimetableViewProps> = ({ assignments = [], teacher
                                     ? 'scale(1.02)'
                                     : 'scale(1)',
                                   transition: 'all 0.2s ease-in-out',
+                                  cursor: 'context-menu', // Indicate right-clickability
                                 }}
+                                onContextMenu={(event) => handleRightClick(event, assignment)}
                               >
                                 <Typography variant="body2" noWrap>
                                   {assignment.task_title}
                                 </Typography>
                                 <Typography variant="caption" display="block" noWrap>
                                   {assignment.classroom_name}
+                                </Typography>
+                                <Typography variant="caption" display="block" noWrap color="text.secondary">
+                                  Status: {assignment.status}
                                 </Typography>
                               </Paper>
                             )}
@@ -122,8 +145,23 @@ const TimetableView: React.FC<TimetableViewProps> = ({ assignments = [], teacher
           </Box>
         ))}
       </Box>
+
+      {/* Status Change Menu */}
+      <Menu
+        anchorEl={anchorEl}
+        open={open}
+        onClose={handleClose}
+        MenuListProps={{
+          'aria-labelledby': 'basic-button',
+        }}
+      >
+        <MenuItem onClick={() => handleStatusChange('ASSIGNED')}>Assigned</MenuItem>
+        <MenuItem onClick={() => handleStatusChange('IN_PROGRESS')}>In Progress</MenuItem>
+        <MenuItem onClick={() => handleStatusChange('COMPLETE')}>Complete</MenuItem>
+        <MenuItem onClick={() => handleStatusChange('UNASSIGNED')}>Unassign</MenuItem>
+      </Menu>
     </Box>
   );
 };
 
-export default TimetableView; 
+export default TimetableView;

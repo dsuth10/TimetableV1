@@ -25,24 +25,21 @@ export const validateTaskForm = (data) => {
 
   // Time validation
   if (data.startTime && data.endTime) {
-    const start = new Date(data.startTime);
-    const end = new Date(data.endTime);
+    const start = data.startTime;
+    const end = data.endTime;
     
-    if (end <= start) {
+    if (end.isSameOrBefore(start)) {
       errors.endTime = 'End time must be after start time';
     }
 
     // Check if within school hours (8:00 AM to 4:00 PM)
-    const schoolStart = new Date(data.startTime);
-    schoolStart.setHours(8, 0, 0);
-    
-    const schoolEnd = new Date(data.startTime);
-    schoolEnd.setHours(16, 0, 0);
+    const schoolStart = start.hour(8).minute(0).second(0);
+    const schoolEnd = start.hour(16).minute(0).second(0);
 
-    if (start < schoolStart) {
+    if (start.isBefore(schoolStart)) {
       errors.startTime = 'Start time must be after 8:00 AM';
     }
-    if (end > schoolEnd) {
+    if (end.isAfter(schoolEnd)) {
       errors.endTime = 'End time must be before 4:00 PM';
     }
   }
@@ -65,4 +62,4 @@ export const validateTaskForm = (data) => {
   }
 
   return errors;
-}; 
+};

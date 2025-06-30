@@ -53,6 +53,21 @@ def serialize_availability(avail):
     }
 
 def serialize_task(task):
+    # Safely access relationships which might not be loaded or might be detached
+    classroom_data = None
+    if task.classroom:
+        try:
+            classroom_data = {'id': task.classroom.id, 'name': task.classroom.name}
+        except DetachedInstanceError:
+            pass # Handle detached instance if necessary, or refetch
+            
+    school_class_data = None
+    if task.school_class:
+        try:
+            school_class_data = {'id': task.school_class.id, 'class_code': task.school_class.class_code, 'teacher': task.school_class.teacher}
+        except DetachedInstanceError:
+            pass # Handle detached instance if necessary, or refetch
+
     return {
         'id': task.id,
         'title': task.title,
@@ -62,8 +77,12 @@ def serialize_task(task):
         'recurrence_rule': task.recurrence_rule,
         'expires_on': task.expires_on.isoformat() if task.expires_on else None,
         'classroom_id': task.classroom_id,
+        'classroom': classroom_data, # Include classroom object
+        'school_class_id': task.school_class_id, # Include school_class_id
+        'school_class': school_class_data, # Include school_class object
         'notes': task.notes,
         'status': task.status,
+        'is_flexible': task.is_flexible, # Include is_flexible
         'created_at': task.created_at.isoformat() if task.created_at else None,
         'updated_at': task.updated_at.isoformat() if task.updated_at else None
     }
@@ -257,7 +276,10 @@ class TaskResource(Resource):
     def get(self, task_id):
         session = next(get_db())
         try:
-            task = session.get(Task, task_id)
+            task = session.query(Task).options(
+                joinedload(Task.classroom),
+                joinedload(Task.school_class)
+            ).get(task_id)
             if not task:
                 return error_response('NOT_FOUND', 'Task not found', 404)
             return {"task": serialize_task(task)}, 200
@@ -268,7 +290,10 @@ class TaskResource(Resource):
         """Update a task and handle recurrence changes."""
         session = next(get_db())
         try:
-            task = session.get(Task, task_id)
+            task = session.query(Task).options(
+                joinedload(Task.classroom),
+                joinedload(Task.school_class)
+            ).get(task_id)
             if not task:
                 return error_response('NOT_FOUND', 'Task not found', 404)
 
@@ -278,6 +303,8 @@ class TaskResource(Resource):
             if 'title' in data:
                 task.title = data['title']
             if 'category' in data:
+                if data['category'] not in ['PLAYGROUND', 'CLASS_SUPPORT', 'GROUP_SUPPORT', 'INDIVIDUAL_SUPPORT']:
+                    return error_response('VALIDATION_ERROR', 'Invalid category', 422)
                 task.category = data['category']
             if 'start_time' in data:
                 try:
@@ -298,6 +325,10 @@ class TaskResource(Resource):
                     return error_response('VALIDATION_ERROR', 'Invalid expires_on format. Use YYYY-MM-DD', 422)
             if 'classroom_id' in data:
                 task.classroom_id = data['classroom_id']
+            if 'school_class_id' in data: # Handle school_class_id update
+                task.school_class_id = data['school_class_id']
+            if 'is_flexible' in data: # Handle is_flexible update
+                task.is_flexible = data['is_flexible']
 
             # Handle recurrence rule changes
             # Store old recurrence rule and times for update_future_assignments

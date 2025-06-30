@@ -9,6 +9,6 @@ export interface Assignment {
   time_slot?: string; // Make optional for unassigned tasks
   start_time?: string; // Make optional for unassigned tasks
   end_time?: string; // Make optional for unassigned tasks
-  status: 'ASSIGNED' | 'UNASSIGNED';
+  status: 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETE';
   notes?: string;
 }

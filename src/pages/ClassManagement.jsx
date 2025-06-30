@@ -4,6 +4,7 @@ import { useDropzone } from 'react-dropzone';
 import Papa from 'papaparse';
 import api from '../services/api';
 import { DataGrid } from '@mui/x-data-grid';
+import SchoolClassForm from '../components/SchoolClassForm';
 
 function ClassManagement() {
     const [uploading, setUploading] = useState(false);
@@ -16,7 +17,7 @@ function ClassManagement() {
     const fetchClasses = async () => {
         try {
             const response = await api.get('/school-classes');
-            setClasses(response.data);
+            setClasses(Array.isArray(response.data) ? response.data : []);
         } catch (err) {
             console.error("Error fetching classes:", err);
             setError(err.response?.data?.error?.message || "An error occurred while fetching classes.");
@@ -191,6 +192,8 @@ JSON Example:
 ]`}
                 </code>
             </Typography>
+            
+            <SchoolClassForm onClassAdded={() => fetchClasses()} />
 
             <Typography variant="h5" gutterBottom sx={{ mt: 4 }}>Existing Classes</Typography>
             <Paper sx={{ height: 400, width: '100%', mt: 2 }}>
