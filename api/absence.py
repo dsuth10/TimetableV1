@@ -146,25 +146,40 @@ class AbsenceResource(Resource):
             
             # Store info before deletion
             aide_id = absence.aide_id
-            affected_assignments = absence.assignments
+            affected_assignments = list(absence.assignments)  # Create a copy since we're deleting the absence
             
             # Delete absence
             db.delete(absence)
             
-            # Attempt to reassign
+            # Attempt to reassign only if aide is actually available during those times
+            from .models import Availability
             reassigned_ids = []
             for assignment in affected_assignments:
-                # Check if original aide is available
-                if assignment.task.classroom and assignment.task.classroom.capacity:
+                # Check if the aide has availability for this assignment
+                # Get the weekday (0=Monday, 6=Sunday)
+                assignment_weekday = assignment.date.weekday()
+                
+                # Check if aide has availability on this weekday and time
+                aide_availability = db.query(Availability).filter(
+                    Availability.aide_id == aide_id,
+                    Availability.weekday == assignment_weekday,
+                    Availability.start_time <= assignment.start_time,
+                    Availability.end_time >= assignment.end_time
+                ).first()
+                
+                # Only reassign if aide has proper availability
+                if aide_availability:
                     assignment.aide_id = aide_id
                     assignment.status = Status.ASSIGNED
                     reassigned_ids.append(assignment.id)
+                # Otherwise, leave assignment unassigned for manual reassignment
             
             db.commit()
             
             return {
                 'message': 'Absence deleted successfully',
-                'reassigned_assignments': reassigned_ids
+                'reassigned_assignments': reassigned_ids,
+                'total_affected_assignments': len(affected_assignments)
             }, 200
             
         except Exception as e:
