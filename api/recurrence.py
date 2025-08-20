@@ -127,7 +127,7 @@ def update_future_assignments(task: Task, session, old_recurrence: Optional[str]
     # Generate new assignments
     new_assignments = task.generate_assignments(start_date, end_date, session)
     
-    # Commit changes
-    session.commit()
+    # Note: Commit is now handled by the calling function
+    # This maintains transaction isolation and allows for proper error handling
     
     return len(new_assignments)
