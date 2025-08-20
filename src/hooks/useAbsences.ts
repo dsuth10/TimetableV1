@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { absenceAPI } from '../services/api';
+import { absencesApi } from '../services';
 import { Absence } from '../types'; // Import the Absence type
 
 export const useAbsences = () => {
@@ -11,7 +11,7 @@ export const useAbsences = () => {
     console.log('useAbsences: Fetching absences...');
     const fetchAbsences = async () => {
       try {
-        const response = await absenceAPI.getAll();
+        const response = await absencesApi.getAll();
         // Ensure we have an array of absences
         const data = Array.isArray(response.data) ? response.data : [];
         setAbsences(data);

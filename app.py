@@ -3,6 +3,9 @@ from flask_cors import CORS
 import os
 import logging
 from api.db import set_engine
+from api.db import init_db
+from api.routes import api_bp
+from api.scheduler import start_scheduler
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -32,6 +35,12 @@ def create_app(engine=None):
     logger.debug("Registered routes:")
     for rule in app.url_map.iter_rules():
         logger.debug(f"{rule.endpoint}: {rule.rule}")
+    # Start the scheduler for automatic horizon extension
+    try:
+        start_scheduler()
+        print("Scheduler started successfully")
+    except Exception as e:
+        print(f"Warning: Could not start scheduler: {e}")
     return app
 
 def print_routes(app):
@@ -43,4 +52,4 @@ def print_routes(app):
 if __name__ == '__main__':
     app = create_app()
     print_routes(app)
-    app.run(debug=True) 
+    app.run(debug=True, host='0.0.0.0', port=5000) 

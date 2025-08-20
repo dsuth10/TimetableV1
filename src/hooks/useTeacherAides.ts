@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { TeacherAide } from '../types';
-import { teacherAideAPI } from '../services/api';
+import { aidesApi } from '../services';
 
 export const useTeacherAides = () => {
   const [teacherAides, setTeacherAides] = useState<TeacherAide[]>([]);
@@ -11,7 +11,7 @@ export const useTeacherAides = () => {
     console.log('useTeacherAides: Fetching teacher aides...');
     const fetchTeacherAides = async () => {
       try {
-        const response = await teacherAideAPI.getAll();
+        const response = await aidesApi.getAll();
         const data = Array.isArray(response.data) ? response.data : [];
         setTeacherAides(data);
         setError(null);

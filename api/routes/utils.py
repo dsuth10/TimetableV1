@@ -111,8 +111,7 @@ def serialize_absence(absence):
     return {
         'id': absence.id,
         'aide_id': absence.aide_id,
-        'start_date': absence.start_date.isoformat(),
-        'end_date': absence.end_date.isoformat(),
+        'date': absence.date.isoformat(),
         'reason': absence.reason,
         'created_at': absence.created_at.isoformat() if absence.created_at else None
     }

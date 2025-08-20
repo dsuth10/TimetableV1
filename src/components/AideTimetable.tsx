@@ -11,7 +11,7 @@ interface AideTimetableProps {
   onUpdateAssignmentStatus: (assignmentId: number, status: Assignment['status']) => void;
 }
 
-const AideTimetable: React.FC<AideTimetableProps> = ({ aide, assignments = [], absences = [], onUpdateAssignmentStatus }) => (
+const AideTimetable: React.FC<AideTimetableProps> = ({ aide, assignments = [], onUpdateAssignmentStatus }) => (
   <div className="aide-timetable">
     <h2 className="aide-name">{aide.name} Schedule</h2>
     <TimetableView

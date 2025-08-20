@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import dayjs from 'dayjs';
+import dayjs, { Dayjs } from 'dayjs';
 import {
   Dialog,
   DialogTitle,
@@ -21,28 +21,72 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'; // Use AdapterDayjs
 import RecurrenceOptions from './RecurrenceOptions';
 import { validateTaskForm } from './validation';
-import { updateTask, getClassrooms, getSchoolClasses, previewRecurringTask } from '../../services/taskService'; // Added getSchoolClasses
+import { updateTask, getClassrooms, getSchoolClasses, previewRecurringTask } from '../../services/taskService';
+import { Task } from '../../types/task';
+import { Classroom, SchoolClass } from '../../types';
 
-const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
-  const [formData, setFormData] = useState({
+interface TaskEditModalProps {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+  task: Task;
+}
+
+interface TaskFormData {
+  title: string;
+  category: string;
+  startTime: Dayjs | null;
+  endTime: Dayjs | null;
+  classroomId: string;
+  schoolClassId: string;
+  notes: string;
+  isRecurring: boolean;
+  selectedDays: string[];
+  expiresOn: Dayjs | null;
+}
+
+interface TaskFormErrors {
+  title?: string;
+  category?: string;
+  startTime?: string;
+  endTime?: string;
+  selectedDays?: string | undefined;
+  notes?: string;
+  classroomId?: string;
+  schoolClassId?: string;
+  isRecurring?: string;
+  expiresOn?: string;
+}
+
+interface PreviewData {
+  occurrences: Array<{
+    date: string;
+    dayOfWeek: string;
+    start_time?: string;
+    end_time?: string;
+  }>;
+}
+
+const TaskEditModal: React.FC<TaskEditModalProps> = ({ open, onClose, onSubmit, task }) => {
+  const [formData, setFormData] = useState<TaskFormData>({
     title: '',
     category: '',
     startTime: null,
     endTime: null,
     classroomId: '',
-    schoolClassId: '', // New state for school_class_id
+    schoolClassId: '',
     notes: '',
     isRecurring: false,
     selectedDays: [],
     expiresOn: null,
   });
 
-  const [errors, setErrors] = useState({});
-  const [classrooms, setClassrooms] = useState([]);
-  const [schoolClasses, setSchoolClasses] = useState([]); // New state for school classes
+  const [errors, setErrors] = useState<TaskFormErrors>({});
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+  const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>([]);
   const [loading, setLoading] = useState(false);
-  const [previewData, setPreviewData] = useState(null);
-  const [apiError, setApiError] = useState(null);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -68,7 +112,7 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
   useEffect(() => {
     if (task) {
       let isRecurring = false;
-      let selectedDays = [];
+      let selectedDays: string[] = [];
       let expiresOn = null;
 
       if (task.recurrence_rule) {
@@ -92,8 +136,8 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
         category: task.category || '',
         startTime: task.start_time ? dayjs(`2000-01-01T${task.start_time}`) : null,
         endTime: task.end_time ? dayjs(`2000-01-01T${task.end_time}`) : null,
-        classroomId: task.classroom_id || '',
-        schoolClassId: task.school_class_id || '', // Include school_class_id
+        classroomId: task.classroom_id?.toString() || '',
+        schoolClassId: task.school_class_id?.toString() || '', // Include school_class_id
         notes: task.notes || '',
         isRecurring: isRecurring,
         selectedDays: selectedDays,
@@ -102,40 +146,40 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
     }
   }, [task]);
 
-  const handleChange = (field) => (event) => {
+  const handleChange = (field: keyof TaskFormData) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | { target: { value: unknown } }) => {
     setFormData({
       ...formData,
       [field]: event.target.value,
     });
     // Clear error when field is modified
     if (errors[field]) {
-      setErrors({ ...errors, [field]: null });
+      setErrors({ ...errors, [field]: undefined });
     }
   };
 
-  const handleTimeChange = (field) => (newValue) => {
+  const handleTimeChange = (field: 'startTime' | 'endTime') => (newValue: any) => {
     setFormData({
       ...formData,
       [field]: newValue,
     });
     // Clear error when field is modified
     if (errors[field]) {
-      setErrors({ ...errors, [field]: null });
+      setErrors({ ...errors, [field]: undefined });
     }
   };
 
-  const handleRecurrenceChange = (newValue) => {
+  const handleRecurrenceChange = (newValue: { isRecurring: boolean; selectedDays: string[]; expiresOn: Dayjs | null }) => {
     setFormData({
       ...formData,
       ...newValue,
     });
     // Clear error when field is modified
     if (errors.selectedDays) {
-      setErrors({ ...errors, selectedDays: null });
+      setErrors({ ...errors, selectedDays: undefined });
     }
   };
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setApiError(null);
     
@@ -161,11 +205,11 @@ const TaskEditModal = ({ open, onClose, onSubmit, task }) => {
         expires_on: formData.isRecurring && formData.expiresOn ? formData.expiresOn.format('YYYY-MM-DD') : null,
       };
 
-      const result = await updateTask(task.id, apiData);
-      onSubmit(result);
+      await updateTask(task.id, apiData);
+      onSubmit();
       onClose();
     } catch (error) {
-      setApiError(error.response?.data?.message || 'Failed to update task');
+      setApiError((error as any)?.response?.data?.message || 'Failed to update task');
     } finally {
       setLoading(false);
     }

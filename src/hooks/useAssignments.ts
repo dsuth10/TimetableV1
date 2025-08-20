@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Assignment } from '../types';
-import { assignmentAPI } from '../services/api';
+import { Assignment } from '../types/assignment';
+import { assignmentsApi } from '../services';
 
 export const useAssignments = () => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -11,7 +11,7 @@ export const useAssignments = () => {
     console.log('useAssignments: Fetching assignments...');
     const fetchAssignments = async () => {
       try {
-        const response = await assignmentAPI.getAll();
+        const response = await assignmentsApi.getAll();
         // Ensure we have an array of assignments
         const data = Array.isArray(response.data) ? response.data : [];
         setAssignments(data);
@@ -31,7 +31,7 @@ export const useAssignments = () => {
 
   const updateAssignment = async (id: number, updatedAssignment: Assignment) => {
     try {
-      const response = await assignmentAPI.update(id, updatedAssignment);
+      const response = await assignmentsApi.update(id, updatedAssignment);
       const data = response.data;
       
       setAssignments(prev =>
@@ -48,7 +48,7 @@ export const useAssignments = () => {
 
   const deleteAssignment = async (id: number) => {
     try {
-      await assignmentAPI.delete(id);
+      await assignmentsApi.delete(id);
       setAssignments(prev => prev.filter(a => a.id !== id));
       setError(null);
     } catch (error) {

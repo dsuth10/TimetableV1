@@ -18,3 +18,26 @@ export interface Absence {
   end_date: string;   // ISO date string
   notes?: string;
 }
+
+export interface Classroom {
+  id: number;
+  name: string;
+  capacity: number;
+  notes?: string;
+}
+
+export interface SchoolClass {
+  id: number;
+  class_code: string;
+  grade: string;
+  teacher: string;
+  notes?: string;
+}
+
+export interface Availability {
+  id: number;
+  aide_id: number;
+  weekday: string; // 'MO', 'TU', 'WE', 'TH', 'FR'
+  start_time: string; // HH:MM format
+  end_time: string;   // HH:MM format
+}

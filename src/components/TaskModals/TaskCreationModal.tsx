@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import dayjs, { Dayjs } from 'dayjs';
+import { Dayjs } from 'dayjs';
 import { useDispatch } from 'react-redux';
 import {
   Dialog,
@@ -19,12 +19,12 @@ import {
   SelectChangeEvent, // Import SelectChangeEvent
 } from '@mui/material';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
-import { PickerChangeHandlerContext, TimeValidationError } from '@mui/x-date-pickers/models'; // Import PickerChangeHandlerContext and TimeValidationError
+
 import RecurrenceOptions from './RecurrenceOptions';
 import { validateTaskForm } from './validation';
 import { createTask, getSchoolClasses, previewRecurringTask } from '../../services/taskService'; // Import previewRecurringTask
 import { addTask } from '../../store/slices/tasksSlice';
-import { Task } from '../../types/task'; // Import Task type
+
 
 interface TaskCreationModalProps {
   open: boolean;
@@ -55,7 +55,7 @@ interface TaskFormErrors {
   category?: string;
   startTime?: string;
   endTime?: string;
-  selectedDays?: string;
+  selectedDays?: string | undefined;
 }
 
 const TaskCreationModal: React.FC<TaskCreationModalProps> = ({ open, onClose, onSubmit }) => {
@@ -106,7 +106,7 @@ const TaskCreationModal: React.FC<TaskCreationModalProps> = ({ open, onClose, on
     }
   };
 
-  const handleTimeChange = (field: 'startTime' | 'endTime') => (newValue: any, context: PickerChangeHandlerContext<TimeValidationError>) => {
+  const handleTimeChange = (field: 'startTime' | 'endTime') => (newValue: any) => {
     setFormData({
       ...formData,
       [field]: newValue as Dayjs | null, // Explicitly cast newValue to Dayjs | null

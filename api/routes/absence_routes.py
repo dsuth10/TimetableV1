@@ -2,8 +2,9 @@ from flask_restful import Resource
 from flask import request
 from api.models import Absence, Assignment
 from api.db import get_db
-from datetime import datetime
-from .utils import error_response, serialize_absence
+from datetime import datetime, date
+from .utils import error_response, serialize_absence, serialize_assignment
+from sqlalchemy import and_, or_
 
 class AbsenceListResource(Resource):
     def get(self):
@@ -13,45 +14,70 @@ class AbsenceListResource(Resource):
             aide_id = request.args.get('aide_id')
             start_date_str = request.args.get('start_date')
             end_date_str = request.args.get('end_date')
+            week = request.args.get('week')
             
             # Build query
             query = session.query(Absence)
             
             if aide_id:
                 query = query.filter_by(aide_id=aide_id)
+            
+            # Handle week filtering (YYYY-WW format)
+            if week:
+                try:
+                    year, week_num = map(int, week.split('-W'))
+                    # Use ISO week: Monday=1, Sunday=7
+                    start_date = date.fromisocalendar(year, week_num, 1)
+                    end_date = date.fromisocalendar(year, week_num, 7)
+                    query = query.filter(
+                        Absence.date.between(start_date, end_date)
+                    )
+                except (ValueError, IndexError):
+                    return error_response('VALIDATION_ERROR', 'Invalid week format. Use YYYY-WW', 422)
+            
+            # Handle date range filtering
             if start_date_str:
                 try:
                     start_date = datetime.fromisoformat(start_date_str).date()
-                    query = query.filter(Absence.start_date >= start_date)
+                    query = query.filter(Absence.date >= start_date)
                 except ValueError:
                     return error_response('VALIDATION_ERROR', 'Invalid start_date format. Use YYYY-MM-DD', 422)
             if end_date_str:
                 try:
                     end_date = datetime.fromisoformat(end_date_str).date()
-                    query = query.filter(Absence.end_date <= end_date)
+                    query = query.filter(Absence.date <= end_date)
                 except ValueError:
                     return error_response('VALIDATION_ERROR', 'Invalid end_date format. Use YYYY-MM-DD', 422)
             
-            # Get pagination parameters
-            page = int(request.args.get('page', 1))
-            per_page = int(request.args.get('per_page', 10))
-            
-            # Get total count
-            total = query.count()
-            
-            # Get paginated results
-            absences = query.order_by(Absence.start_date.desc())\
-                .offset((page - 1) * per_page)\
-                .limit(per_page)\
-                .all()
-            
-            return {
-                'items': [serialize_absence(a) for a in absences],
-                'total': total,
-                'page': page,
-                'per_page': per_page,
-                'pages': (total + per_page - 1) // per_page
-            }, 200
+            # Get pagination parameters (only if not using week filter)
+            if not week:
+                page = int(request.args.get('page', 1))
+                per_page = int(request.args.get('per_page', 10))
+                
+                # Get total count
+                total = query.count()
+                
+                # Get paginated results
+                absences = query.order_by(Absence.date.desc())\
+                    .offset((page - 1) * per_page)\
+                    .limit(per_page)\
+                    .all()
+                
+                return {
+                    'items': [serialize_absence(a) for a in absences],
+                    'total': total,
+                    'page': page,
+                    'per_page': per_page,
+                    'pages': (total + per_page - 1) // per_page
+                }, 200
+            else:
+                # For week filtering, return all results without pagination
+                absences = query.order_by(Absence.date).all()
+                
+                return {
+                    'absences': [serialize_absence(a) for a in absences]
+                }, 200
+                
         except Exception as e:
             return error_response('INTERNAL_ERROR', str(e), 500)
 
@@ -61,48 +87,43 @@ class AbsenceListResource(Resource):
             data = request.get_json(force=True)
             
             # Validate required fields
-            required_fields = ['aide_id', 'start_date', 'end_date', 'reason']
+            required_fields = ['aide_id', 'date', 'reason']
             for field in required_fields:
                 if field not in data:
                     return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
             
-            # Validate date formats
+            # Validate date format
             try:
-                start_date = datetime.fromisoformat(data['start_date']).date()
-                end_date = datetime.fromisoformat(data['end_date']).date()
+                absence_date = datetime.fromisoformat(data['date']).date()
             except ValueError:
                 return error_response('VALIDATION_ERROR', 'Invalid date format. Use YYYY-MM-DD', 422)
             
-            if start_date > end_date:
-                return error_response('VALIDATION_ERROR', 'start_date cannot be after end_date', 422)
-            
-            # Check for existing absence for any day in the range
+            # Check for existing absence for the same aide and date
             existing = session.query(Absence).filter(
                 Absence.aide_id == data['aide_id'],
-                ((Absence.start_date <= end_date) & (Absence.end_date >= start_date))
+                Absence.date == absence_date
             ).first()
             
             if existing:
-                return error_response('CONFLICT', 'An absence already exists for this aide overlapping the specified date range.', 409)
+                return error_response('CONFLICT', 'An absence already exists for this aide on the specified date.', 409)
             
             # Create absence
             absence = Absence(
                 aide_id=data['aide_id'],
-                start_date=start_date,
-                end_date=end_date,
+                date=absence_date,
                 reason=data['reason']
             )
             
             session.add(absence)
             
-            # Release assignments for the absent aide during the absence period
+            # Release assignments for the absent aide on the absence date
             released_assignments = absence.release_assignments(session)
             
             session.commit()
             
             return {
                 'absence': serialize_absence(absence),
-                'released_assignments': [serialize_assignment(a) for a in released_assignments]
+                'affected_assignments': [serialize_assignment(a) for a in released_assignments]
             }, 201
         except Exception as e:
             session.rollback()
@@ -131,48 +152,38 @@ class AbsenceResource(Resource):
             
             data = request.get_json(force=True)
             
-            # Store old dates for comparison
-            old_start_date = absence.start_date
-            old_end_date = absence.end_date
+            # Store old date for comparison
+            old_date = absence.date
 
             # Update fields
-            if 'start_date' in data:
+            if 'date' in data:
                 try:
-                    absence.start_date = datetime.fromisoformat(data['start_date']).date()
+                    absence.date = datetime.fromisoformat(data['date']).date()
                 except ValueError:
-                    return error_response('VALIDATION_ERROR', 'Invalid start_date format. Use YYYY-MM-DD', 422)
-            
-            if 'end_date' in data:
-                try:
-                    absence.end_date = datetime.fromisoformat(data['end_date']).date()
-                except ValueError:
-                    return error_response('VALIDATION_ERROR', 'Invalid end_date format. Use YYYY-MM-DD', 422)
+                    return error_response('VALIDATION_ERROR', 'Invalid date format. Use YYYY-MM-DD', 422)
             
             if 'reason' in data:
                 absence.reason = data['reason']
-
-            if absence.start_date > absence.end_date:
-                return error_response('VALIDATION_ERROR', 'start_date cannot be after end_date', 422)
 
             # Check for overlapping absences after update
             existing_overlap = session.query(Absence).filter(
                 Absence.aide_id == absence.aide_id,
                 Absence.id != absence.id,
-                ((Absence.start_date <= absence.end_date) & (Absence.end_date >= absence.start_date))
+                Absence.date == absence.date
             ).first()
             if existing_overlap:
-                return error_response('CONFLICT', 'An absence already exists for this aide overlapping the updated date range.', 409)
+                return error_response('CONFLICT', 'An absence already exists for this aide on the updated date.', 409)
 
-            # Re-release assignments if dates changed or reason changed.
-            # For simplicity, we re-release all assignments within the new range
-            # and potentially re-assign those outside the new range but within the old.
-            # A more complex logic would involve diffing.
-            released_assignments = absence.release_assignments(session)
+            # Re-release assignments if date changed
+            if old_date != absence.date:
+                released_assignments = absence.release_assignments(session)
+            else:
+                released_assignments = []
             
             session.commit()
             return {
                 'absence': serialize_absence(absence),
-                'released_assignments': [serialize_assignment(a) for a in released_assignments]
+                'affected_assignments': [serialize_assignment(a) for a in released_assignments]
             }, 200
         except Exception as e:
             session.rollback()

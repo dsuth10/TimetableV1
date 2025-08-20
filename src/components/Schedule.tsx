@@ -6,11 +6,11 @@ import { useTeacherAides } from '../hooks/useTeacherAides';
 import { useAbsences } from '../hooks/useAbsences';
 import UnassignedTasks from './UnassignedTasks';
 import TimetableGrid from './TimetableGrid/TimetableGrid';
-import type { Assignment, TeacherAide } from '../types/index';
+import type { Assignment } from '../types/assignment';
 import ConflictResolutionModal from './ConflictResolutionModal';
 
 const Schedule: React.FC = () => {
-  const { assignments, isLoading: assignmentsLoading, error: assignmentsError, updateAssignment, deleteAssignment } = useAssignments();
+  const { assignments, isLoading: assignmentsLoading, error: assignmentsError, updateAssignment } = useAssignments();
   const { teacherAides, isLoading: aidesLoading, error: aidesError } = useTeacherAides();
   const { absences, isLoading: absencesLoading, error: absencesError } = useAbsences();
   const [localAssignments, setLocalAssignments] = useState<Assignment[]>([]);
@@ -48,12 +48,8 @@ const Schedule: React.FC = () => {
     if (!assignment) return;
 
     // Determine the source and destination aide/day/time
-    let sourceAideId: number | null | undefined;
-    let sourceDay: string | undefined;
-    let sourceTimeSlot: string | undefined;
-
     if (source.droppableId !== 'unassigned') {
-      [sourceAideId, sourceDay, sourceTimeSlot] = source.droppableId.split('-');
+      const [, ,] = source.droppableId.split('-');
     }
 
     const [destAideIdStr, destDay, destTimeSlot] = destination.droppableId.split('-');
@@ -128,15 +124,15 @@ const Schedule: React.FC = () => {
     }
     // Case 2: Dragging from Timetable to Unassigned Tasks
     else if (destination.droppableId === 'unassigned') {
-      const updatedAssignment: Assignment = {
+      const updatedAssignment = {
         ...assignment,
         aide_id: null,
-        status: 'UNASSIGNED', // Explicitly assign the literal type
-        date: undefined, // Clear date, day, time_slot for unassigned
+        status: 'UNASSIGNED' as const,
+        date: undefined,
         day: undefined,
         start_time: undefined,
         end_time: undefined,
-      } as Assignment; // Cast to Assignment to satisfy TypeScript
+      } as unknown as Assignment;
 
       try {
         setLocalAssignments((prevAssignments) => {
@@ -211,7 +207,7 @@ const Schedule: React.FC = () => {
     if (action === 'replace') {
       try {
         // Step 1: Unassign the conflicting assignment
-        const unassignedConflicting = { ...conflictingAssignment, aide_id: null, status: 'UNASSIGNED', date: undefined, day: undefined, start_time: undefined, end_time: undefined } as Assignment;
+        const unassignedConflicting = { ...conflictingAssignment, aide_id: null, status: 'UNASSIGNED' as const, date: undefined, day: undefined, start_time: undefined, end_time: undefined } as unknown as Assignment;
         await updateAssignment(conflictingAssignment.id, unassignedConflicting);
 
         // Step 2: Assign the new assignment
@@ -292,11 +288,8 @@ const Schedule: React.FC = () => {
 
       {conflictDetails && (
         <ConflictResolutionModal
-          open={conflictModalOpen}
+          isOpen={conflictModalOpen}
           onClose={() => handleConflictResolve('cancel')}
-          onResolve={handleConflictResolve}
-          conflictingAssignment={conflictDetails.conflictingAssignment}
-          newAssignmentData={conflictDetails.newAssignmentData}
         />
       )}
     </Box>

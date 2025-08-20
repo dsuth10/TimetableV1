@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { Task, Assignment } from '../types/task';
+import { Assignment } from '../types/task';
 
 interface TimetableState {
   assignments: Assignment[];

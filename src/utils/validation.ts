@@ -17,10 +17,10 @@ export const validateTaskDrop = (
   existingAssignments: Assignment[]
 ): boolean => {
   // Time constraint validation
-  if (task.isTimeConstrained) {
+  if (task.start_time && task.end_time) {
     const slotTime = new Date(`2000-01-01T${timeSlot}`);
-    const startTime = new Date(`2000-01-01T${task.startTime}`);
-    const endTime = new Date(`2000-01-01T${task.endTime}`);
+    const startTime = new Date(`2000-01-01T${task.start_time}`);
+    const endTime = new Date(`2000-01-01T${task.end_time}`);
     
     if (slotTime < startTime || slotTime > endTime) {
       return false;
@@ -34,7 +34,7 @@ export const validateTaskDrop = (
     const assignmentStart = new Date(`2000-01-01T${assignment.startTime}`);
     const assignmentEnd = new Date(assignmentStart.getTime() + assignment.duration * 60000);
     const dropStart = new Date(`2000-01-01T${timeSlot}`);
-    const dropEnd = new Date(dropStart.getTime() + task.duration * 60000);
+    const dropEnd = new Date(dropStart.getTime() + (task.end_time && task.start_time ? new Date(`2000-01-01T${task.end_time}`).getTime() - new Date(`2000-01-01T${task.start_time}`).getTime() : 60000));
 
     return (
       (dropStart < assignmentEnd && dropEnd > assignmentStart)

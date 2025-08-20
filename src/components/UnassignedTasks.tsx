@@ -5,7 +5,7 @@ import {
   Paper,
   Typography,
   List,
-  ListItem,
+
   ListItemText,
   TextField,
   MenuItem,
@@ -114,7 +114,7 @@ const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ assignments }) => {
                       placement="right"
                       arrow
                     >
-                      <ListItem
+                      <Box
                         ref={provided.innerRef}
                         {...provided.draggableProps}
                         {...provided.dragHandleProps}
@@ -128,6 +128,7 @@ const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ assignments }) => {
                           '&:hover': {
                             boxShadow: 3,
                           },
+                          p: 2,
                         }}
                       >
                         <ListItemText
@@ -155,7 +156,7 @@ const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ assignments }) => {
                             </React.Fragment>
                           }
                         />
-                      </ListItem>
+                                              </Box>
                     </Tooltip>
                   )}
                 </Draggable>

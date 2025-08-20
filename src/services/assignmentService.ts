@@ -1,4 +1,4 @@
-import { Task, Assignment } from '../types/task';
+import { Assignment } from '../types/task';
 
 const API_BASE_URL = '/api';
 

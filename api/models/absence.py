@@ -8,9 +8,8 @@ class Absence(Base):
     
     id = Column(Integer, primary_key=True)
     aide_id = Column(Integer, ForeignKey('teacher_aide.id', ondelete='CASCADE'), nullable=False)
-    start_date = Column(Date, nullable=False)
-    end_date = Column(Date, nullable=False)
-    reason = Column(String(200))
+    date = Column(Date, nullable=False)
+    reason = Column(String(500))
     created_at = Column(DateTime, server_default=func.now())
     
     # Relationships
@@ -21,8 +20,7 @@ class Absence(Base):
         """Release assignments associated with this absence."""
         assignments = session.query(Assignment).filter(
             Assignment.aide_id == self.aide_id,
-            Assignment.date >= self.start_date,
-            Assignment.date <= self.end_date
+            Assignment.date == self.date
         ).all()
         for assignment in assignments:
             assignment.aide_id = None

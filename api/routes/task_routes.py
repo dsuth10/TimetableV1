@@ -1,64 +1,55 @@
 from flask_restful import Resource
 from flask import request
-from api.models import Task, SchoolClass # Import SchoolClass
+from api.models import Task, SchoolClass
 from api.db import get_db
-from datetime import date, time
+from datetime import datetime, date, time
+from sqlalchemy.orm import joinedload
 from .utils import error_response, serialize_task
-from sqlalchemy.orm import joinedload # Import joinedload
+from api.recurrence import update_future_assignments
 
 class TaskListResource(Resource):
     def get(self):
         session = next(get_db())
         try:
             # Get filter parameters
-            status = request.args.get('status')
             category = request.args.get('category')
-            start_date = request.args.get('start_date')
-            end_date = request.args.get('end_date')
-            page = int(request.args.get('page', 1))
-            per_page = int(request.args.get('per_page', 20))
+            status = request.args.get('status')
             
-            # Build query, eagerly load classroom and school_class
+            # Build query
             query = session.query(Task).options(
                 joinedload(Task.classroom),
                 joinedload(Task.school_class)
             )
             
-            if status:
-                query = query.filter(Task.status == status)
             if category:
-                query = query.filter(Task.category == category)
-            if start_date:
-                try:
-                    start_date = date.fromisoformat(start_date)
-                    query = query.filter(Task.expires_on >= start_date)
-                except ValueError:
-                    return error_response('VALIDATION_ERROR', 'Invalid start_date format. Use YYYY-MM-DD', 422)
-            if end_date:
-                try:
-                    end_date = date.fromisoformat(end_date)
-                    query = query.filter(Task.expires_on <= end_date)
-                except ValueError:
-                    return error_response('VALIDATION_ERROR', 'Invalid end_date format. Use YYYY-MM-DD', 422)
+                query = query.filter_by(category=category)
+            if status:
+                query = query.filter_by(status=status)
+            
+            # Get pagination parameters
+            page = int(request.args.get('page', 1))
+            per_page = int(request.args.get('per_page', 10))
             
             # Get total count
             total = query.count()
             
-            # Apply pagination
-            tasks = query.offset((page - 1) * per_page).limit(per_page).all()
+            # Get paginated results
+            tasks = query.order_by(Task.title)\
+                .offset((page - 1) * per_page)\
+                .limit(per_page)\
+                .all()
             
-            result = {
-                "tasks": [serialize_task(task) for task in tasks],
-                "total": total,
-                "page": page,
-                "per_page": per_page
-            }
-            return result, 200
+            return {
+                'items': [serialize_task(task) for task in tasks],
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'pages': (total + per_page - 1) // per_page
+            }, 200
         except Exception as e:
             return error_response('INTERNAL_ERROR', str(e), 500)
 
     def post(self):
-        """Create a new task."""
         session = next(get_db())
         try:
             data = request.get_json(force=True)
@@ -73,16 +64,17 @@ class TaskListResource(Resource):
             if data['category'] not in ['PLAYGROUND', 'CLASS_SUPPORT', 'GROUP_SUPPORT', 'INDIVIDUAL_SUPPORT']:
                 return error_response('VALIDATION_ERROR', 'Invalid category', 422)
             
-            # Validate times
+            # Validate time format
             try:
                 start_time = time.fromisoformat(data['start_time'])
                 end_time = time.fromisoformat(data['end_time'])
             except ValueError:
                 return error_response('VALIDATION_ERROR', 'Invalid time format. Use HH:MM', 422)
             
+            # Validate time logic
             if start_time >= end_time:
                 return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
-
+            
             # Validate school_class_id if provided
             school_class_id = data.get('school_class_id')
             if school_class_id:
@@ -99,7 +91,7 @@ class TaskListResource(Resource):
                 recurrence_rule=data.get('recurrence_rule'),
                 expires_on=date.fromisoformat(data['expires_on']) if data.get('expires_on') else None,
                 classroom_id=data.get('classroom_id'),
-                school_class_id=school_class_id, # Add school_class_id
+                school_class_id=school_class_id,
                 notes=data.get('notes'),
                 status=data.get('status', 'ACTIVE')
             )
@@ -135,6 +127,11 @@ class TaskResource(Resource):
             
             data = request.get_json(force=True)
             
+            # Store old values for comparison
+            old_recurrence = task.recurrence_rule
+            old_start_time = task.start_time
+            old_end_time = task.end_time
+            
             # Update fields
             if 'title' in data:
                 task.title = data['title']
@@ -161,7 +158,7 @@ class TaskResource(Resource):
                     return error_response('VALIDATION_ERROR', 'Invalid expires_on format. Use YYYY-MM-DD', 422)
             if 'classroom_id' in data:
                 task.classroom_id = data['classroom_id']
-            if 'school_class_id' in data: # Handle school_class_id update
+            if 'school_class_id' in data:
                 school_class_id = data['school_class_id']
                 if school_class_id:
                     school_class = session.query(SchoolClass).get(school_class_id)
@@ -173,8 +170,27 @@ class TaskResource(Resource):
             if 'status' in data:
                 task.status = data['status']
             
+            # Update future assignments if this is a recurring task and relevant fields changed
+            assignments_updated = 0
+            if task.recurrence_rule and (
+                old_recurrence != task.recurrence_rule or
+                old_start_time != task.start_time or
+                old_end_time != task.end_time
+            ):
+                assignments_updated = update_future_assignments(
+                    task, session, 
+                    old_recurrence=old_recurrence,
+                    old_start_time=old_start_time,
+                    old_end_time=old_end_time
+                )
+            
             session.commit()
-            return serialize_task(task), 200
+            
+            response = serialize_task(task)
+            if assignments_updated > 0:
+                response['assignments_updated'] = assignments_updated
+            
+            return response, 200
         except Exception as e:
             session.rollback()
             return error_response('INTERNAL_ERROR', str(e), 500)

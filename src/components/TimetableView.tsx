@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Droppable, Draggable } from 'react-beautiful-dnd';
-import { Box, Grid, Paper, Typography, CircularProgress, Menu, MenuItem } from '@mui/material';
-import { Assignment } from 'types/assignment';
+import { Box, Typography, CircularProgress, Menu, MenuItem } from '@mui/material';
+import { Assignment } from '../types/assignment';
 
-import { TeacherAide } from 'types';
+import { TeacherAide } from '../types';
 
 interface TimetableViewProps {
   assignments: Assignment[];
@@ -15,7 +15,7 @@ interface TimetableViewProps {
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const TIME_SLOTS = ['8:00', '9:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00'];
 
-const TimetableView: React.FC<TimetableViewProps> = ({ assignments = [], teacherAides = [], isLoading, onUpdateAssignmentStatus }) => {
+const TimetableView: React.FC<TimetableViewProps> = ({ assignments = [], isLoading, onUpdateAssignmentStatus }) => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const open = Boolean(anchorEl);
@@ -105,11 +105,10 @@ const TimetableView: React.FC<TimetableViewProps> = ({ assignments = [], teacher
                             index={index}
                           >
                             {(provided, snapshot) => (
-                              <Paper
+                              <Box
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
                                 {...provided.dragHandleProps}
-                                elevation={snapshot.isDragging ? 3 : 1}
                                 sx={{
                                   p: 1,
                                   mb: 1,
@@ -120,6 +119,8 @@ const TimetableView: React.FC<TimetableViewProps> = ({ assignments = [], teacher
                                     : 'scale(1)',
                                   transition: 'all 0.2s ease-in-out',
                                   cursor: 'context-menu', // Indicate right-clickability
+                                  borderRadius: 1,
+                                  boxShadow: snapshot.isDragging ? 3 : 1,
                                 }}
                                 onContextMenu={(event) => handleRightClick(event, assignment)}
                               >
@@ -132,7 +133,7 @@ const TimetableView: React.FC<TimetableViewProps> = ({ assignments = [], teacher
                                 <Typography variant="caption" display="block" noWrap color="text.secondary">
                                   Status: {assignment.status}
                                 </Typography>
-                              </Paper>
+                              </Box>
                             )}
                           </Draggable>
                         ))}

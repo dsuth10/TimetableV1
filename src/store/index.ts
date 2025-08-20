@@ -1,19 +1,20 @@
-import { configureStore } from '@reduxjs/toolkit';
-import aidesReducer from './slices/aidesSlice.ts';
-import tasksReducer from './slices/tasksSlice';
-import assignmentsReducer from './slices/assignmentsSlice';
-import absencesReducer from './slices/absencesSlice';
-import timetableReducer from './slices/timetableSlice';
+// Zustand stores for global state management
+export { useAidesStore } from './stores/aidesStore';
+export { useTasksStore } from './stores/tasksStore';
+export { useAssignmentsStore } from './stores/assignmentsStore';
+export { useAbsencesStore } from './stores/absencesStore';
+export { useClassroomsStore } from './stores/classroomsStore';
+export { useSchoolClassesStore } from './stores/schoolClassesStore';
+export { useUIStore } from './stores/uiStore';
 
-export const store = configureStore({
-  reducer: {
-    aides: aidesReducer,
-    tasks: tasksReducer,
-    assignments: assignmentsReducer,
-    absences: absencesReducer,
-    timetable: timetableReducer,
-  },
-});
+// Store types
+export type { AidesState, AidesActions } from './stores/aidesStore';
+export type { TasksState, TasksActions } from './stores/tasksStore';
+export type { AssignmentsState, AssignmentsActions } from './stores/assignmentsStore';
+export type { AbsencesState, AbsencesActions } from './stores/absencesStore';
+export type { ClassroomsState, ClassroomsActions } from './stores/classroomsStore';
+export type { SchoolClassesState, SchoolClassesActions } from './stores/schoolClassesStore';
+export type { UIState, UIActions } from './stores/uiStore';
 
-export type RootState = ReturnType<typeof store.getState>;
-export type AppDispatch = typeof store.dispatch;
+// Store initialization
+export { initializeStores } from './stores/initializeStores';

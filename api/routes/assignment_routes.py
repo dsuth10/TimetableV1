@@ -2,10 +2,12 @@ from flask_restful import Resource
 from flask import request
 from api.models import Assignment, Task, TeacherAide, Absence, Availability
 from api.db import get_db
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, time
 from .utils import error_response, serialize_assignment, serialize_absence, serialize_availability
 from api.recurrence import extend_assignment_horizon, DEFAULT_HORIZON_WEEKS
 from sqlalchemy import and_, or_
+import calendar
+from sqlalchemy.orm import joinedload
 
 class AssignmentListResource(Resource):
     def get(self):
@@ -358,4 +360,133 @@ class HorizonExtensionResource(Resource):
             
         except Exception as e:
             session.rollback()
+            return error_response('INTERNAL_ERROR', str(e), 500)
+
+class AssignmentWeeklyMatrixResource(Resource):
+    def get(self):
+        """Get weekly matrix for UI - organized by day and time slots for each aide."""
+        session = next(get_db())
+        try:
+            # Get week parameter
+            week = request.args.get('week')
+            if not week:
+                return error_response('VALIDATION_ERROR', 'Missing required parameter: week', 422)
+            
+            # Parse week format (YYYY-WW)
+            try:
+                year, week_num = map(int, week.split('-W'))
+                start_date = date.fromisocalendar(year, week_num, 1)  # Monday
+                end_date = date.fromisocalendar(year, week_num, 7)    # Sunday
+            except (ValueError, IndexError):
+                return error_response('VALIDATION_ERROR', 'Invalid week format. Use YYYY-WW', 422)
+            
+            # Get all teacher aides
+            aides = session.query(TeacherAide).order_by(TeacherAide.name).all()
+            
+            # Get all assignments for the week
+            assignments = session.query(Assignment).options(
+                joinedload(Assignment.task),
+                joinedload(Assignment.aide)
+            ).filter(
+                Assignment.date.between(start_date, end_date)
+            ).all()
+            
+            # Get all absences for the week
+            absences = session.query(Absence).options(
+                joinedload(Absence.aide)
+            ).filter(
+                Absence.date.between(start_date, end_date)
+            ).all()
+            
+            # Create time slots (30-minute intervals from 08:00 to 16:00)
+            time_slots = []
+            current_time = time(8, 0)  # 08:00
+            end_time = time(16, 0)     # 16:00
+            
+            while current_time < end_time:
+                time_slots.append(current_time.strftime('%H:%M'))
+                # Add 30 minutes
+                current_minutes = current_time.hour * 60 + current_time.minute + 30
+                current_time = time(current_minutes // 60, current_minutes % 60)
+            
+            # Create day names
+            day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+            
+            # Build the matrix structure
+            matrix = {
+                'week': week,
+                'start_date': start_date.isoformat(),
+                'end_date': end_date.isoformat(),
+                'time_slots': time_slots,
+                'days': day_names,
+                'aides': [],
+                'assignments': {},
+                'absences': {}
+            }
+            
+            # Add aide information
+            for aide in aides:
+                matrix['aides'].append({
+                    'id': aide.id,
+                    'name': aide.name,
+                    'colour_hex': aide.colour_hex,
+                    'qualifications': aide.qualifications
+                })
+            
+            # Organize assignments by aide, day, and time slot
+            for assignment in assignments:
+                if not assignment.aide_id:
+                    continue  # Skip unassigned tasks
+                
+                aide_id = assignment.aide_id
+                day_index = (assignment.date - start_date).days
+                
+                if day_index >= len(day_names):
+                    continue  # Skip weekends
+                
+                day_name = day_names[day_index]
+                
+                # Find time slots that this assignment covers
+                assignment_start = assignment.start_time
+                assignment_end = assignment.end_time
+                
+                for i, slot_time_str in enumerate(time_slots):
+                    slot_time = datetime.strptime(slot_time_str, '%H:%M').time()
+                    slot_end_time = datetime.strptime(time_slots[i + 1], '%H:%M').time() if i + 1 < len(time_slots) else time(16, 0)
+                    
+                    # Check if assignment overlaps with this time slot
+                    if (assignment_start < slot_end_time and assignment_end > slot_time):
+                        key = f"{aide_id}_{day_name}_{slot_time_str}"
+                        matrix['assignments'][key] = {
+                            'assignment_id': assignment.id,
+                            'task_id': assignment.task_id,
+                            'task_title': assignment.task.title if assignment.task else 'Unknown Task',
+                            'task_category': assignment.task.category if assignment.task else 'UNKNOWN',
+                            'start_time': assignment.start_time.strftime('%H:%M'),
+                            'end_time': assignment.end_time.strftime('%H:%M'),
+                            'status': assignment.status,
+                            'classroom': assignment.task.classroom.name if assignment.task and assignment.task.classroom else None,
+                            'school_class': assignment.task.school_class.name if assignment.task and assignment.task.school_class else None,
+                            'notes': assignment.task.notes if assignment.task else None
+                        }
+            
+            # Organize absences by aide and day
+            for absence in absences:
+                aide_id = absence.aide_id
+                day_index = (absence.date - start_date).days
+                
+                if day_index >= len(day_names):
+                    continue  # Skip weekends
+                
+                day_name = day_names[day_index]
+                key = f"{aide_id}_{day_name}"
+                matrix['absences'][key] = {
+                    'absence_id': absence.id,
+                    'reason': absence.reason,
+                    'date': absence.date.isoformat()
+                }
+            
+            return matrix, 200
+            
+        except Exception as e:
             return error_response('INTERNAL_ERROR', str(e), 500)

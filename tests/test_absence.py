@@ -74,8 +74,7 @@ def sample_assignment(db_session, sample_aide, sample_task):
 @pytest.fixture
 def absence_payload():
     return {
-        "start_date": date.today().isoformat(),
-        "end_date": date.today().isoformat(),
+        "date": date.today().isoformat(),
         "reason": "Test absence"
     }
 
@@ -107,8 +106,7 @@ def test_create_and_get_absence(client, aide_payload, absence_payload):
     # Create absence
     absence_data = {
         "aide_id": aide_id,
-        "start_date": absence_payload["start_date"],
-        "end_date": absence_payload["end_date"],
+        "date": absence_payload["date"],
         "reason": absence_payload["reason"]
     }
     resp = client.post("/api/absences", json=absence_data)
@@ -124,8 +122,8 @@ def test_create_and_get_absence(client, aide_payload, absence_payload):
     logger.debug(f"List absences response: {resp.status_code} - {resp.get_json()}")
     assert resp.status_code == 200
     data = resp.get_json()
-    assert "absences" in data
-    absences = data["absences"]
+    assert "items" in data
+    absences = data["items"]
     assert len(absences) == 1
     assert absences[0]["id"] == absence_id
     assert absences[0]["aide_id"] == aide_id
@@ -145,8 +143,7 @@ def test_absence_validation(client, aide_payload):
     
     # Invalid date format
     resp = client.post(f"/api/teacher-aides/{aide_id}/absences", json={
-        "start_date": "invalid-date",
-        "end_date": date.today().isoformat(),
+        "date": "invalid-date",
         "reason": "Test"
     })
     logger.debug(f"Invalid date response: {resp.status_code} - {resp.get_json()}")
@@ -154,8 +151,7 @@ def test_absence_validation(client, aide_payload):
     
     # Nonexistent aide
     resp = client.post("/api/teacher-aides/999/absences", json={
-        "start_date": date.today().isoformat(),
-        "end_date": date.today().isoformat(),
+        "date": date.today().isoformat(),
         "reason": "Test"
     })
     logger.debug(f"Nonexistent aide response: {resp.status_code} - {resp.get_json()}")
@@ -215,8 +211,7 @@ def test_absence_with_assignments(client, aide_payload, task_payload, absence_pa
     # Create absence using the same fixed date
     absence_data = {
         "aide_id": aide_id,
-        "start_date": fixed_date,
-        "end_date": fixed_date,
+        "date": fixed_date,
         "reason": absence_payload["reason"]
     }
     resp = client.post("/api/absences", json=absence_data)
@@ -273,13 +268,12 @@ def test_list_absences_by_week(client, aide_payload, absence_payload):
     # Create absences for different weeks
     today = date.today()
     week = today.isocalendar()
-    week_str = f"{week[0]}-{week[1]:02d}"
+    week_str = f"{week[0]}-W{week[1]:02d}"
 
     # This week
     absence_data = {
         "aide_id": aide_id,
-        "start_date": today.isoformat(),
-        "end_date": today.isoformat(),
+        "date": today.isoformat(),
         "reason": absence_payload["reason"]
     }
     resp = client.post("/api/absences", json=absence_data)
@@ -287,8 +281,7 @@ def test_list_absences_by_week(client, aide_payload, absence_payload):
 
     # Next week
     next_week = today + timedelta(days=7)
-    absence_data["start_date"] = next_week.isoformat()
-    absence_data["end_date"] = next_week.isoformat()
+    absence_data["date"] = next_week.isoformat()
     resp = client.post("/api/absences", json=absence_data)
     assert resp.status_code == 201
 
@@ -300,12 +293,11 @@ def test_list_absences_by_week(client, aide_payload, absence_payload):
     absences = data["absences"]
     assert len(absences) == 1
     assert absences[0]["aide_id"] == aide_id
-    assert absences[0]["start_date"] == today.isoformat()
-    assert absences[0]["end_date"] == today.isoformat()
+    assert absences[0]["date"] == today.isoformat()
 
     # List absences for next week
     next_week_iso = next_week.isocalendar()
-    next_week_str = f"{next_week_iso[0]}-{next_week_iso[1]:02d}"
+    next_week_str = f"{next_week_iso[0]}-W{next_week_iso[1]:02d}"
     resp = client.get(f"/api/absences?week={next_week_str}")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -313,8 +305,7 @@ def test_list_absences_by_week(client, aide_payload, absence_payload):
     absences = data["absences"]
     assert len(absences) == 1
     assert absences[0]["aide_id"] == aide_id
-    assert absences[0]["start_date"] == next_week.isoformat()
-    assert absences[0]["end_date"] == next_week.isoformat()
+    assert absences[0]["date"] == next_week.isoformat()
 
 def test_invalid_week_format(client):
     resp = client.get("/api/absences?week=invalid")

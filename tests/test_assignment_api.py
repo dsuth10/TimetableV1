@@ -384,3 +384,114 @@ def test_check_conflicts_detached_instance(client, db_session):
     data = response.get_json()
     assert data["has_conflict"] is False
     assert "conflicting_assignment" not in data 
+
+def test_weekly_matrix_endpoint(client, db_session):
+    """Test the weekly matrix endpoint returns correct structure for UI."""
+    classroom, task, aide = create_test_data(db_session)
+    
+    # Create a second aide for testing
+    aide2 = TeacherAide(
+        name="Test Aide 2",
+        qualifications="Test Qualifications 2",
+        colour_hex="#00FF00"
+    )
+    db_session.add(aide2)
+    db_session.commit()
+    
+    # Create assignments for the current week
+    today = date.today()
+    start_of_week = today - timedelta(days=today.weekday())  # Monday
+    
+    # Create assignments for Monday and Wednesday
+    assignments = [
+        Assignment(
+            task_id=task.id,
+            aide_id=aide.id,
+            date=start_of_week,  # Monday
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            status="ASSIGNED"
+        ),
+        Assignment(
+            task_id=task.id,
+            aide_id=aide2.id,
+            date=start_of_week + timedelta(days=2),  # Wednesday
+            start_time=time(14, 0),
+            end_time=time(15, 0),
+            status="ASSIGNED"
+        )
+    ]
+    db_session.add_all(assignments)
+    db_session.commit()
+    
+    # Get current week number
+    year, week, _ = today.isocalendar()
+    week_param = f"{year}-W{week:02d}"
+    
+    # Test weekly matrix endpoint
+    response = client.get(f"/api/assignments/weekly-matrix?week={week_param}")
+    assert response.status_code == 200
+    
+    data = response.get_json()
+    
+    # Verify structure
+    assert "week" in data
+    assert "start_date" in data
+    assert "end_date" in data
+    assert "time_slots" in data
+    assert "days" in data
+    assert "aides" in data
+    assert "assignments" in data
+    assert "absences" in data
+    
+    # Verify week parameter
+    assert data["week"] == week_param
+    
+    # Verify time slots (30-minute intervals from 08:00 to 16:00)
+    assert len(data["time_slots"]) == 16  # 8 hours * 2 slots per hour
+    assert data["time_slots"][0] == "08:00"
+    assert data["time_slots"][-1] == "15:30"
+    
+    # Verify days
+    expected_days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    assert data["days"] == expected_days
+    
+    # Verify aides
+    assert len(data["aides"]) == 2
+    aide_names = [aide["name"] for aide in data["aides"]]
+    assert "Test Aide" in aide_names
+    assert "Test Aide 2" in aide_names
+    
+    # Verify assignments are present
+    assert len(data["assignments"]) > 0
+    
+    # Check for Monday assignment (aide 1)
+    monday_key = f"{aide.id}_Monday_09:00"
+    assert monday_key in data["assignments"]
+    monday_assignment = data["assignments"][monday_key]
+    assert monday_assignment["task_title"] == "Test Task"
+    assert monday_assignment["start_time"] == "09:00"
+    assert monday_assignment["end_time"] == "10:00"
+    assert monday_assignment["status"] == "ASSIGNED"
+    
+    # Check for Wednesday assignment (aide 2)
+    wednesday_key = f"{aide2.id}_Wednesday_14:00"
+    assert wednesday_key in data["assignments"]
+    wednesday_assignment = data["assignments"][wednesday_key]
+    assert wednesday_assignment["task_title"] == "Test Task"
+    assert wednesday_assignment["start_time"] == "14:00"
+    assert wednesday_assignment["end_time"] == "15:00"
+
+def test_weekly_matrix_validation(client, db_session):
+    """Test weekly matrix endpoint validation."""
+    # Test missing week parameter
+    response = client.get("/api/assignments/weekly-matrix")
+    assert response.status_code == 422
+    
+    # Test invalid week format
+    response = client.get("/api/assignments/weekly-matrix?week=invalid")
+    assert response.status_code == 422
+    
+    # Test non-existent week
+    response = client.get("/api/assignments/weekly-matrix?week=2024-99")
+    assert response.status_code == 422 
