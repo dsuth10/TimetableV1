@@ -13,52 +13,109 @@ A Flask-based web application for managing teacher aide assignments and schedule
 - Absence management and automatic task reassignment
 - **Recurrence engine with automatic horizon extension and task modification handling**
 - **Scheduler system for background processing**
+- **Modern React frontend with TypeScript and Material-UI**
+- **Drag-and-drop assignment functionality**
+- **Real-time conflict resolution**
 - Comprehensive API with full CRUD operations
 
 ## Tech Stack
 
+### Backend
 - Python 3.12
 - Flask
 - SQLAlchemy
 - SQLite
 - pytest for testing
-- React (Frontend)
+
+### Frontend
+- React 18+ with TypeScript
 - Vite (Build tool)
+- Material-UI v5 (UI Components)
+- Zustand (State Management)
+- React Router v6
+- React Beautiful DnD (Drag & Drop)
+- Axios (API Communication)
 
 ## Project Status
 
 ### ✅ Completed Features
-- **Backend API (100% Complete)**
-  - Database schema and migrations
-  - Teacher aide management
-  - Task management with recurrence support
-  - Assignment management with collision detection
-  - Weekly matrix endpoint for UI
-  - Absence management with weekly filtering and automatic assignment handling
-  - Classroom and school class management
-  - **Recurrence engine with iCal RRULE support**
-  - **Automatic horizon extension and task modification handling**
-  - **Scheduler system for background processing**
-  - Comprehensive testing suite
 
-- **Frontend Foundation**
-  - React setup with Vite
-  - Basic routing structure
-  - State management with Redux Toolkit
+#### **Backend API (100% Complete)**
+- Database schema and migrations
+- Teacher aide management
+- Task management with recurrence support
+- Assignment management with collision detection
+- Weekly matrix endpoint for UI
+- Absence management with weekly filtering and automatic assignment handling
+- Classroom and school class management
+- **Recurrence engine with iCal RRULE support**
+- **Automatic horizon extension and task modification handling**
+- **Scheduler system for background processing**
+- Comprehensive testing suite
+
+#### **Frontend Architecture (100% Complete)**
+- **Modern React setup with Vite and TypeScript**
+- **Comprehensive routing with React Router v6**
+- **State management migration from Redux to Zustand**
+- **Centralized API service layer with Axios**
+- **Error boundaries and global error handling**
+- **Toast notification system**
+- **Responsive layout with Material-UI**
+- **Performance optimizations and lazy loading**
+- **TypeScript strict mode with comprehensive type safety**
+
+#### **Frontend Components (95% Complete)**
+- **Layout system with responsive sidebar**
+- **Schedule component with drag-and-drop**
+- **Timetable grid with weekly view**
+- **Unassigned tasks panel**
+- **Task management interface**
+- **Aide management interface**
+- **Conflict resolution modals**
+- **Error boundaries and loading states**
+- **Toast notifications for user feedback**
+
+#### **State Management (100% Complete)**
+- **Zustand stores for all domains:**
+  - `aidesStore` - Teacher aide management
+  - `tasksStore` - Task management  
+  - `assignmentsStore` - Assignment scheduling
+  - `absencesStore` - Absence tracking
+  - `classroomsStore` - Classroom management
+  - `schoolClassesStore` - School class management
+  - `uiStore` - UI state and navigation
+- **Cross-store subscriptions and reactive updates**
+- **Local storage persistence**
+- **Optimistic updates and error handling**
+
+#### **API Integration (100% Complete)**
+- **Centralized API client with Axios**
+- **Request/response interceptors**
+- **Error handling and retry logic**
+- **Type-safe API services for all resources**
+- **Automatic loading states and toast notifications**
+- **Week-based filtering and pagination support**
 
 ### 🚧 In Progress
-- Frontend components (Timetable Grid, Task Management, etc.)
-- Drag and drop functionality
-- UI/UX implementation
+- Final UI/UX polish and accessibility improvements
+- End-to-end testing with Playwright
+- Performance optimization and bundle analysis
 
 ### 📋 Planned
-- Complete frontend implementation
-- Drag and drop assignment functionality
-- Conflict resolution modals
-- Accessibility features
-- Offline functionality
+- Offline functionality with service workers
+- Advanced filtering and search capabilities
+- Export functionality (PDF, Excel)
+- Mobile app development
+- Advanced analytics and reporting
 
 ## Setup
+
+### Prerequisites
+- Python 3.12+
+- Node.js 18+
+- npm or yarn
+
+### Backend Setup
 
 1. Clone the repository:
 ```bash
@@ -72,27 +129,134 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-3. Install dependencies:
+3. Install Python dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
 4. Initialize the database:
 ```bash
-flask init-db
+python seed.py
 ```
 
-5. Run the development server:
+### Frontend Setup
+
+1. Install Node.js dependencies:
 ```bash
-flask run
+npm install
 ```
+
+2. Start the development server:
+```bash
+npm run dev
+```
+
+### Running the Application
+
+1. Start the Flask backend:
+```bash
+python app.py
+```
+- Backend runs at http://localhost:5000
+
+2. Start the React frontend (in a new terminal):
+```bash
+npm run dev
+```
+- Frontend runs at http://localhost:3000
+
+3. Open the application:
+- Visit http://localhost:3000 in your browser
 
 ## Testing
 
-Run the test suite:
+### Backend Testing
 ```bash
 pytest
 ```
+
+### Frontend Testing
+```bash
+npm test
+```
+
+### End-to-End Testing
+```bash
+npm run test:e2e
+```
+
+## Frontend Architecture
+
+### State Management (Zustand)
+The application uses Zustand for state management, providing a lightweight and flexible alternative to Redux:
+
+```typescript
+// Example store structure
+export const useAidesStore = create<AidesStore>()(
+  persist(
+    (set, get) => ({
+      aides: [],
+      loading: false,
+      error: null,
+      setAides: (aides) => set({ aides, error: null }),
+      setLoading: (loading) => set({ loading }),
+      setError: (error) => set({ error }),
+    }),
+    { name: 'aides-storage' }
+  )
+);
+```
+
+### API Service Layer
+Centralized API communication with type safety:
+
+```typescript
+// Centralized API client
+export const api = axios.create({
+  baseURL: '/api',
+  timeout: 10000,
+});
+
+// Typed API services
+export const aidesApi = {
+  getAll: () => api.get<TeacherAide[]>('/aides'),
+  create: (data: CreateAideRequest) => api.post<TeacherAide>('/aides', data),
+  update: (id: number, data: UpdateAideRequest) => api.put<TeacherAide>(`/aides/${id}`, data),
+  delete: (id: number) => api.delete(`/aides/${id}`),
+};
+```
+
+### Component Architecture
+- **Atomic Design Principles**: Components organized by complexity
+- **Error Boundaries**: Graceful error handling throughout the app
+- **Lazy Loading**: Code splitting for better performance
+- **TypeScript**: Comprehensive type safety across all components
+
+### Key Frontend Features
+
+#### **Drag-and-Drop Assignment**
+- Drag unassigned tasks to time slots
+- Drag assignments between time slots
+- Real-time conflict detection
+- Visual feedback during drag operations
+
+#### **Responsive Design**
+- Mobile-first approach
+- Collapsible sidebar for mobile devices
+- Touch-friendly drag-and-drop
+- Adaptive layout for different screen sizes
+
+#### **Real-time Updates**
+- Optimistic UI updates
+- Automatic data synchronization
+- Cross-store subscriptions
+- Toast notifications for user feedback
+
+#### **Performance Optimizations**
+- Lazy loading of routes and components
+- Memoization of expensive calculations
+- Debounced API calls
+- Efficient re-rendering with React.memo
 
 ## API Documentation
 
@@ -330,11 +494,11 @@ In a new terminal:
 ```bash
 npm run dev
 ```
-- The frontend will run at http://localhost:5173 (or another port if 5173 is in use)
+- The frontend will run at http://localhost:3000
 
 ### 6. Open the app
 
-Visit [http://localhost:5173/](http://localhost:5173/) in your browser.
+Visit [http://localhost:3000/](http://localhost:3000/) in your browser.
 
 ---
 
@@ -346,31 +510,68 @@ Visit [http://localhost:5173/](http://localhost:5173/) in your browser.
 - **API connection refused?**
   - The frontend expects the backend at http://localhost:5000. Make sure it's running.
 - **Port in use?**
-  - If 5173 is in use, Vite will use the next available port (e.g., 5174). Check the terminal output for the correct URL.
+  - If 3000 is in use, Vite will use the next available port. Check the terminal output for the correct URL.
 - **Scheduler not working?**
   - Check the scheduler status: `GET /api/scheduler/status`
   - Manually trigger horizon extension: `POST /api/scheduler/extend-horizon`
+- **TypeScript errors?**
+  - Run `npx tsc --noEmit` to check for type errors
+  - Ensure all dependencies are properly installed
+- **Frontend build issues?**
+  - Clear node_modules and reinstall: `rm -rf node_modules && npm install`
+  - Check for conflicting dependencies
 
 ---
 
 ## Project Structure
 
-- `api/` — Flask API code
-  - `recurrence.py` — Recurrence engine with RRULE parsing
-  - `scheduler.py` — Background scheduler for horizon extension
-- `src/` — React frontend code
-- `instance/` — SQLite database file (`timetable.db`)
-- `seed.py` — Script to populate the database with test data
-- `docs/` — API documentation
+```
+timetable/
+├── api/                    # Flask API code
+│   ├── models/            # SQLAlchemy models
+│   ├── routes/            # API route handlers
+│   ├── recurrence.py      # Recurrence engine with RRULE parsing
+│   └── scheduler.py       # Background scheduler for horizon extension
+├── src/                   # React frontend code
+│   ├── components/        # React components
+│   │   ├── TaskModals/    # Task creation/editing modals
+│   │   └── TimetableGrid/ # Timetable grid components
+│   ├── hooks/             # Custom React hooks
+│   ├── pages/             # Page components
+│   ├── services/          # API service layer
+│   ├── store/             # Zustand state management
+│   │   └── stores/        # Individual store definitions
+│   ├── types/             # TypeScript type definitions
+│   └── utils/             # Utility functions
+├── instance/              # SQLite database file (timetable.db)
+├── seed.py               # Script to populate the database with test data
+├── docs/                 # API documentation
+├── cypress/              # End-to-end tests
+└── tests/                # Backend tests
+```
 
 ---
 
 ## Development Tips
-- Make sure to keep backend and frontend running in separate terminals.
-- If you change the database models, you may need to reset and reseed the database.
-- For any issues, check both the backend and frontend terminal output for errors.
-- The weekly matrix endpoint (`/api/assignments/weekly-matrix`) is optimized for frontend consumption and provides all necessary data for building the timetable grid.
-- Use the collision detection endpoint (`/api/assignments/check`) before creating assignments to prevent scheduling conflicts.
-- The absence management API (`/api/absences`) supports weekly filtering for timetable overlay integration and automatically handles assignment releases.
-- The recurrence engine automatically handles task modifications and horizon extension - no manual intervention required.
-- All backend API endpoints are now complete and ready for frontend integration. 
+
+### Frontend Development
+- **State Management**: Use Zustand stores for global state, local state for component-specific data
+- **API Calls**: Always use the centralized API services for consistency and type safety
+- **Error Handling**: Implement error boundaries and use toast notifications for user feedback
+- **Performance**: Use React.memo for expensive components and implement proper dependency arrays
+- **TypeScript**: Maintain strict type safety and avoid `any` types
+
+### Backend Development
+- **Database**: Use migrations for schema changes and always test with fresh data
+- **API Design**: Follow RESTful principles and maintain consistent response formats
+- **Testing**: Write comprehensive tests for all API endpoints
+- **Error Handling**: Use standardized error responses and proper HTTP status codes
+
+### General Tips
+- Keep backend and frontend running in separate terminals during development
+- Use the weekly matrix endpoint (`/api/assignments/weekly-matrix`) for frontend timetable data
+- Implement collision detection before creating assignments to prevent conflicts
+- The absence management API supports weekly filtering for timetable overlay integration
+- The recurrence engine automatically handles task modifications and horizon extension
+- All backend API endpoints are complete and ready for frontend integration
+- The frontend now provides a modern, responsive interface with drag-and-drop functionality 
