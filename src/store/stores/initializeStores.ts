@@ -59,9 +59,11 @@ export const initializeStores = async () => {
  */
 const loadInitialAides = async () => {
   try {
-    const response = await fetch('/api/aides');
+    const response = await fetch('/api/teacher-aides');
     if (response.ok) {
-      const aides = await response.json();
+      const data = await response.json();
+      // Handle different response formats
+      const aides = Array.isArray(data) ? data : (data.data || data.items || []);
       useAidesStore.getState().setAides(aides);
     }
   } catch (error) {

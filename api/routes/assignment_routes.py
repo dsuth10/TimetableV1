@@ -395,7 +395,9 @@ class AssignmentWeeklyMatrixResource(Resource):
             absences = session.query(Absence).options(
                 joinedload(Absence.aide)
             ).filter(
-                Absence.date.between(start_date, end_date)
+                or_(
+                    and_(Absence.start_date <= end_date, Absence.end_date >= start_date)
+                )
             ).all()
             
             # Create time slots (30-minute intervals from 08:00 to 16:00)
@@ -473,18 +475,26 @@ class AssignmentWeeklyMatrixResource(Resource):
             # Organize absences by aide and day
             for absence in absences:
                 aide_id = absence.aide_id
-                day_index = (absence.date - start_date).days
+                # For date range absences, we need to handle multiple days
+                current_date = max(absence.start_date, start_date)
+                end_absence_date = min(absence.end_date, end_date)
                 
-                if day_index >= len(day_names):
-                    continue  # Skip weekends
-                
-                day_name = day_names[day_index]
-                key = f"{aide_id}_{day_name}"
-                matrix['absences'][key] = {
-                    'absence_id': absence.id,
-                    'reason': absence.reason,
-                    'date': absence.date.isoformat()
-                }
+                while current_date <= end_absence_date:
+                    day_index = (current_date - start_date).days
+                    
+                    if day_index >= len(day_names):
+                        break  # Skip weekends
+                    
+                    day_name = day_names[day_index]
+                    key = f"{aide_id}_{day_name}"
+                    matrix['absences'][key] = {
+                        'absence_id': absence.id,
+                        'reason': absence.reason,
+                        'start_date': absence.start_date.isoformat(),
+                        'end_date': absence.end_date.isoformat()
+                    }
+                    
+                    current_date += timedelta(days=1)
             
             return matrix, 200
             

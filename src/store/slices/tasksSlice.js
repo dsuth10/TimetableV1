@@ -1,10 +1,10 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { taskAPI } from '../../services/api';
+import { tasksApi } from '../../services/tasksApi';
 
 export const fetchTasks = createAsyncThunk(
   'tasks/fetchTasks',
   async () => {
-    const response = await taskAPI.getAll();
+    const response = await tasksApi.getAll();
     return response.data;
   }
 );

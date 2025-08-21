@@ -182,3 +182,7 @@ export const api = {
   patch: apiClient.patch.bind(apiClient),
   delete: apiClient.delete.bind(apiClient),
 };
+
+// Import and re-export task API for backward compatibility
+import { tasksApi } from './tasksApi';
+export const taskAPI = tasksApi;

@@ -20,7 +20,7 @@ class TeacherAide(Base):
 
     def is_available(self, date_: date, start_time: time, end_time: time) -> bool:
         """Check if aide is available for given time slot."""
-        if any(absence.date == date_ for absence in self.absences):
+        if any(absence.start_date <= date_ <= absence.end_date for absence in self.absences):
             return False
         weekday = WEEKDAY_MAP[date_.strftime('%A').upper()]
         return any(

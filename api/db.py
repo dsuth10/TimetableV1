@@ -25,7 +25,17 @@ def get_engine():
     global _engine
     if _engine is None:
         db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'instance', 'timetable.db')
-        _engine = create_engine(f'sqlite:///{db_path}')
+        _engine = create_engine(
+            f'sqlite:///{db_path}',
+            pool_size=20,
+            max_overflow=30,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+            connect_args={
+                'timeout': 30,
+                'check_same_thread': False
+            }
+        )
         # Initialize session factory when engine is created
         set_engine(_engine)
     return _engine

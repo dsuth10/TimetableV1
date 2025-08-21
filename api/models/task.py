@@ -96,7 +96,8 @@ class Task(Base):
             return assignments
             
         except Exception as e:
-            raise ValueError(f"Invalid recurrence rule: {str(e)}")
+            print(f"Warning: Failed to generate assignments for task {self.id} with recurrence rule '{self.recurrence_rule}': {str(e)}")
+            return []
     
     def update_future_assignments(self, session, old_recurrence: Optional[str] = None,
                                 old_start_time: Optional[time] = None,

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Dayjs } from 'dayjs';
-import { useDispatch } from 'react-redux';
 import {
   Dialog,
   DialogTitle,
@@ -23,7 +22,7 @@ import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import RecurrenceOptions from './RecurrenceOptions';
 import { validateTaskForm } from './validation';
 import { createTask, getSchoolClasses, previewRecurringTask } from '../../services/taskService'; // Import previewRecurringTask
-import { addTask } from '../../store/slices/tasksSlice';
+import { useTasksStore } from '../../store';
 
 
 interface TaskCreationModalProps {
@@ -59,7 +58,7 @@ interface TaskFormErrors {
 }
 
 const TaskCreationModal: React.FC<TaskCreationModalProps> = ({ open, onClose, onSubmit }) => {
-  const dispatch = useDispatch();
+  const { addTask } = useTasksStore();
   const [formData, setFormData] = useState<TaskFormData>({
     title: '',
     category: '',
@@ -154,8 +153,8 @@ const TaskCreationModal: React.FC<TaskCreationModalProps> = ({ open, onClose, on
       };
 
       const result = await createTask(apiData); // Always call createTask
-      // The API returns the created task directly, so dispatch that object
-      dispatch(addTask(result));
+      // The API returns the created task directly, so add it to the store
+      addTask(result);
       onSubmit(result);
       onClose();
     } catch (error: any) {

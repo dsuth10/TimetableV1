@@ -27,10 +27,12 @@ class AbsenceListResource(Resource):
                 try:
                     year, week_num = map(int, week.split('-W'))
                     # Use ISO week: Monday=1, Sunday=7
-                    start_date = date.fromisocalendar(year, week_num, 1)
-                    end_date = date.fromisocalendar(year, week_num, 7)
+                    week_start = date.fromisocalendar(year, week_num, 1)
+                    week_end = date.fromisocalendar(year, week_num, 7)
                     query = query.filter(
-                        Absence.date.between(start_date, end_date)
+                        or_(
+                            and_(Absence.start_date <= week_end, Absence.end_date >= week_start)
+                        )
                     )
                 except (ValueError, IndexError):
                     return error_response('VALIDATION_ERROR', 'Invalid week format. Use YYYY-WW', 422)
@@ -38,14 +40,14 @@ class AbsenceListResource(Resource):
             # Handle date range filtering
             if start_date_str:
                 try:
-                    start_date = datetime.fromisoformat(start_date_str).date()
-                    query = query.filter(Absence.date >= start_date)
+                    filter_start_date = datetime.fromisoformat(start_date_str).date()
+                    query = query.filter(Absence.start_date >= filter_start_date)
                 except ValueError:
                     return error_response('VALIDATION_ERROR', 'Invalid start_date format. Use YYYY-MM-DD', 422)
             if end_date_str:
                 try:
-                    end_date = datetime.fromisoformat(end_date_str).date()
-                    query = query.filter(Absence.date <= end_date)
+                    filter_end_date = datetime.fromisoformat(end_date_str).date()
+                    query = query.filter(Absence.end_date <= filter_end_date)
                 except ValueError:
                     return error_response('VALIDATION_ERROR', 'Invalid end_date format. Use YYYY-MM-DD', 422)
             
@@ -58,7 +60,7 @@ class AbsenceListResource(Resource):
                 total = query.count()
                 
                 # Get paginated results
-                absences = query.order_by(Absence.date.desc())\
+                absences = query.order_by(Absence.start_date.desc())\
                     .offset((page - 1) * per_page)\
                     .limit(per_page)\
                     .all()
@@ -72,7 +74,7 @@ class AbsenceListResource(Resource):
                 }, 200
             else:
                 # For week filtering, return all results without pagination
-                absences = query.order_by(Absence.date).all()
+                absences = query.order_by(Absence.start_date).all()
                 
                 return {
                     'absences': [serialize_absence(a) for a in absences]
@@ -87,36 +89,43 @@ class AbsenceListResource(Resource):
             data = request.get_json(force=True)
             
             # Validate required fields
-            required_fields = ['aide_id', 'date', 'reason']
+            required_fields = ['aide_id', 'start_date', 'end_date']
             for field in required_fields:
                 if field not in data:
                     return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
             
             # Validate date format
             try:
-                absence_date = datetime.fromisoformat(data['date']).date()
+                start_date = datetime.fromisoformat(data['start_date']).date()
+                end_date = datetime.fromisoformat(data['end_date']).date()
             except ValueError:
                 return error_response('VALIDATION_ERROR', 'Invalid date format. Use YYYY-MM-DD', 422)
             
-            # Check for existing absence for the same aide and date
-            existing = session.query(Absence).filter(
+            if start_date > end_date:
+                return error_response('VALIDATION_ERROR', 'start_date must be before end_date', 422)
+            
+            # Check for overlapping absences
+            overlapping = session.query(Absence).filter(
                 Absence.aide_id == data['aide_id'],
-                Absence.date == absence_date
+                or_(
+                    and_(Absence.start_date <= end_date, Absence.end_date >= start_date)
+                )
             ).first()
             
-            if existing:
-                return error_response('CONFLICT', 'An absence already exists for this aide on the specified date.', 409)
+            if overlapping:
+                return error_response('CONFLICT', 'Absence overlaps with existing absence', 409)
             
             # Create absence
             absence = Absence(
                 aide_id=data['aide_id'],
-                date=absence_date,
-                reason=data['reason']
+                start_date=start_date,
+                end_date=end_date,
+                reason=data.get('reason')
             )
             
             session.add(absence)
             
-            # Release assignments for the absent aide on the absence date
+            # Release assignments for the absent aide during the absence period
             released_assignments = absence.release_assignments(session)
             
             session.commit()
@@ -152,30 +161,43 @@ class AbsenceResource(Resource):
             
             data = request.get_json(force=True)
             
-            # Store old date for comparison
-            old_date = absence.date
+            # Store old dates for comparison
+            old_start_date = absence.start_date
+            old_end_date = absence.end_date
 
             # Update fields
-            if 'date' in data:
+            if 'start_date' in data:
                 try:
-                    absence.date = datetime.fromisoformat(data['date']).date()
+                    absence.start_date = datetime.fromisoformat(data['start_date']).date()
                 except ValueError:
-                    return error_response('VALIDATION_ERROR', 'Invalid date format. Use YYYY-MM-DD', 422)
+                    return error_response('VALIDATION_ERROR', 'Invalid start_date format. Use YYYY-MM-DD', 422)
+            
+            if 'end_date' in data:
+                try:
+                    absence.end_date = datetime.fromisoformat(data['end_date']).date()
+                except ValueError:
+                    return error_response('VALIDATION_ERROR', 'Invalid end_date format. Use YYYY-MM-DD', 422)
             
             if 'reason' in data:
                 absence.reason = data['reason']
+
+            # Validate date range
+            if absence.start_date > absence.end_date:
+                return error_response('VALIDATION_ERROR', 'start_date must be before end_date', 422)
 
             # Check for overlapping absences after update
             existing_overlap = session.query(Absence).filter(
                 Absence.aide_id == absence.aide_id,
                 Absence.id != absence.id,
-                Absence.date == absence.date
+                or_(
+                    and_(Absence.start_date <= absence.end_date, Absence.end_date >= absence.start_date)
+                )
             ).first()
             if existing_overlap:
-                return error_response('CONFLICT', 'An absence already exists for this aide on the updated date.', 409)
+                return error_response('CONFLICT', 'Absence overlaps with existing absence', 409)
 
-            # Re-release assignments if date changed
-            if old_date != absence.date:
+            # Re-release assignments if dates changed
+            if old_start_date != absence.start_date or old_end_date != absence.end_date:
                 released_assignments = absence.release_assignments(session)
             else:
                 released_assignments = []

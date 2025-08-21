@@ -52,19 +52,21 @@ class Scheduler:
     def _extend_horizon(self):
         """Extend the assignment horizon for all recurring tasks."""
         try:
-            session = next(get_db())
-            tasks_processed, assignments_created = extend_assignment_horizon(session, DEFAULT_HORIZON_WEEKS)
-            
-            if tasks_processed > 0 or assignments_created > 0:
-                print(f"Horizon extension: {tasks_processed} tasks processed, {assignments_created} assignments created")
+            from api.session import managed_session
+            with managed_session() as session:
+                tasks_processed, assignments_created = extend_assignment_horizon(session, DEFAULT_HORIZON_WEEKS)
+                
+                if tasks_processed > 0 or assignments_created > 0:
+                    print(f"Horizon extension: {tasks_processed} tasks processed, {assignments_created} assignments created")
             
         except Exception as e:
             print(f"Horizon extension error: {e}")
     
     def run_horizon_extension_now(self) -> tuple[int, int]:
         """Manually trigger horizon extension and return results."""
-        session = next(get_db())
-        return extend_assignment_horizon(session, DEFAULT_HORIZON_WEEKS)
+        from api.session import managed_session
+        with managed_session() as session:
+            return extend_assignment_horizon(session, DEFAULT_HORIZON_WEEKS)
 
 # Global scheduler instance
 scheduler = Scheduler()

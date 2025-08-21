@@ -37,8 +37,9 @@ def create_app(engine=None):
         logger.debug(f"{rule.endpoint}: {rule.rule}")
     # Start the scheduler for automatic horizon extension
     try:
-        start_scheduler()
-        print("Scheduler started successfully")
+        # Temporarily disable automatic horizon extension to prevent database locks
+        # start_scheduler()
+        print("Scheduler disabled to prevent database locks")
     except Exception as e:
         print(f"Warning: Could not start scheduler: {e}")
     return app

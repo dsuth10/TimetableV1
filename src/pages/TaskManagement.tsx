@@ -25,7 +25,7 @@ import { useTasksStore } from '../store';
 import { Task } from '../types/task';
 
 function TaskManagement() {
-  const { tasks, error, setTasks, deleteTask } = useTasksStore();
+  const { tasks, error, loading, setTasks, setLoading, setError, deleteTask } = useTasksStore();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
@@ -33,17 +33,24 @@ function TaskManagement() {
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
 
   useEffect(() => {
-    // Load tasks from API - we'll need to implement this
+    // Load tasks from API
     const fetchTasks = async () => {
       try {
-        // const response = await tasksApi.getAll();
-        // setTasks(response.data);
+        setLoading(true);
+        const response = await fetch('/api/tasks');
+        const data = await response.json();
+        console.log('Tasks API response:', data);
+        setTasks(Array.isArray(data.tasks) ? data.tasks : Array.isArray(data) ? data : []);
+        setError(null);
       } catch (error) {
         console.error('Failed to load tasks:', error);
+        setError('Failed to load tasks');
+      } finally {
+        setLoading(false);
       }
     };
     fetchTasks();
-  }, [setTasks]);
+  }, [setTasks, setLoading, setError]);
 
   const handleEditClick = (task: Task) => {
     setTaskToEdit(task);
@@ -68,7 +75,7 @@ function TaskManagement() {
     }
   };
 
-  if (status === 'loading') {
+  if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
         <CircularProgress />
@@ -76,7 +83,7 @@ function TaskManagement() {
     );
   }
 
-  if (status === 'failed') {
+  if (error) {
     return (
       <Box>
         <Typography color="error">{error}</Typography>
@@ -107,7 +114,7 @@ function TaskManagement() {
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Box sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h4">Tasks ({tasks.length})</Typography>
+          <Typography variant="h4">Tasks ({Array.isArray(tasks) ? tasks.length : 0})</Typography>
           <Button 
             variant="contained" 
             color="primary"
@@ -118,7 +125,7 @@ function TaskManagement() {
         </Box>
 
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 3 }}>
-          {tasks.map((task: Task) => (
+          {Array.isArray(tasks) && tasks.map((task: Task) => (
             <Box key={task.id}>
               <Card>
                 <CardContent>

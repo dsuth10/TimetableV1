@@ -23,32 +23,32 @@ export interface UpdateAvailabilityRequest extends Partial<CreateAvailabilityReq
 // Aide API functions
 export const aidesApi = {
   // Get all aides
-  getAll: () => api.get<TeacherAide[]>('/aides'),
+  getAll: () => api.get<TeacherAide[]>('/teacher-aides'),
   
   // Get aide by ID
-  getById: (id: number) => api.get<TeacherAide>(`/aides/${id}`),
+  getById: (id: number) => api.get<TeacherAide>(`/teacher-aides/${id}`),
   
   // Create new aide
-  create: (data: CreateAideRequest) => api.post<TeacherAide>('/aides', data),
+  create: (data: CreateAideRequest) => api.post<TeacherAide>('/teacher-aides', data),
   
   // Update aide
-  update: (id: number, data: UpdateAideRequest) => api.put<TeacherAide>(`/aides/${id}`, data),
+  update: (id: number, data: UpdateAideRequest) => api.put<TeacherAide>(`/teacher-aides/${id}`, data),
   
   // Delete aide
-  delete: (id: number) => api.delete(`/aides/${id}`),
+  delete: (id: number) => api.delete(`/teacher-aides/${id}`),
   
   // Get aide availability
-  getAvailability: (id: number) => api.get<Availability[]>(`/aides/${id}/availability`),
+  getAvailability: (id: number) => api.get<Availability[]>(`/teacher-aides/${id}/availability`),
   
   // Add availability
   addAvailability: (id: number, data: CreateAvailabilityRequest) => 
-    api.post<Availability>(`/aides/${id}/availability`, data),
+    api.post<Availability>(`/teacher-aides/${id}/availability`, data),
   
   // Update availability
   updateAvailability: (aideId: number, availabilityId: number, data: UpdateAvailabilityRequest) =>
-    api.put<Availability>(`/aides/${aideId}/availability/${availabilityId}`, data),
+    api.put<Availability>(`/teacher-aides/${aideId}/availability/${availabilityId}`, data),
   
   // Delete availability
   deleteAvailability: (aideId: number, availabilityId: number) =>
-    api.delete(`/aides/${aideId}/availability/${availabilityId}`),
+    api.delete(`/teacher-aides/${aideId}/availability/${availabilityId}`),
 };

@@ -35,11 +35,11 @@ class AbsenceListResource(Resource):
             try:
                 year, week_num = map(int, week.split('-'))
                 # Use ISO week: Monday=1, Sunday=7
-                start_date = date.fromisocalendar(year, week_num, 1)
-                end_date = date.fromisocalendar(year, week_num, 7)
+                week_start = date.fromisocalendar(year, week_num, 1)
+                week_end = date.fromisocalendar(year, week_num, 7)
                 query = query.filter(
                     or_(
-                        and_(Absence.start_date <= end_date, Absence.end_date >= start_date)
+                        and_(Absence.start_date <= week_end, Absence.end_date >= week_start)
                     )
                 )
             except ValueError:

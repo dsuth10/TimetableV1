@@ -124,9 +124,17 @@ cd timetable
 ```
 
 2. Create and activate a virtual environment:
+
+**Using Bash (Git Bash):**
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/Scripts/activate
+```
+
+**Using PowerShell:**
+```powershell
+python -m venv venv
+venv\Scripts\Activate.ps1
 ```
 
 3. Install Python dependencies:
@@ -154,13 +162,27 @@ npm run dev
 ### Running the Application
 
 1. Start the Flask backend:
+
+**Using Bash (Git Bash):**
 ```bash
+python app.py
+```
+
+**Using PowerShell:**
+```powershell
 python app.py
 ```
 - Backend runs at http://localhost:5000
 
 2. Start the React frontend (in a new terminal):
+
+**Using Bash (Git Bash):**
 ```bash
+npm run dev
+```
+
+**Using PowerShell:**
+```powershell
 npm run dev
 ```
 - Frontend runs at http://localhost:3000
@@ -472,10 +494,15 @@ npm install
 
 If you encounter database errors or want to start fresh:
 
+**Using Bash (Git Bash):**
 ```bash
-del instance\timetable.db  # On Windows
-# or
-rm instance/timetable.db    # On Mac/Linux
+rm instance/timetable.db
+python seed.py
+```
+
+**Using PowerShell:**
+```powershell
+Remove-Item instance\timetable.db
 python seed.py
 ```
 
@@ -518,8 +545,18 @@ Visit [http://localhost:3000/](http://localhost:3000/) in your browser.
   - Run `npx tsc --noEmit` to check for type errors
   - Ensure all dependencies are properly installed
 - **Frontend build issues?**
-  - Clear node_modules and reinstall: `rm -rf node_modules && npm install`
+  - Clear node_modules and reinstall:
+    - **Bash (Git Bash):** `rm -rf node_modules && npm install`
+    - **PowerShell:** `Remove-Item -Recurse -Force node_modules && npm install`
   - Check for conflicting dependencies
+- **Windows-specific issues:**
+  - **Virtual environment activation fails?** Make sure you're using the correct activation script for your shell:
+    - Bash (Git Bash): `source venv/Scripts/activate`
+    - PowerShell: `venv\Scripts\Activate.ps1`
+    - Command Prompt: `venv\Scripts\activate.bat`
+  - **Permission errors?** Run PowerShell as Administrator if you encounter permission issues
+  - **Path issues?** Ensure Python and Node.js are in your system PATH
+  - **Database file locked?** Close any applications that might be accessing the database file
 
 ---
 
