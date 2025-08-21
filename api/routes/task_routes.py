@@ -40,7 +40,7 @@ class TaskListResource(Resource):
                 .all()
             
             return {
-                'items': [serialize_task(task) for task in tasks],
+                'tasks': [serialize_task(task) for task in tasks],
                 'total': total,
                 'page': page,
                 'per_page': per_page,
@@ -98,8 +98,8 @@ class TaskListResource(Resource):
             
             session.add(task)
             session.commit()
-            
-            return serialize_task(task), 201
+
+            return {'task': serialize_task(task)}, 201
         except Exception as e:
             session.rollback()
             return error_response('INTERNAL_ERROR', str(e), 500)
@@ -114,7 +114,7 @@ class TaskResource(Resource):
             ).get(task_id)
             if not task:
                 return error_response('NOT_FOUND', f'Task {task_id} not found', 404)
-            return serialize_task(task), 200
+            return {'task': serialize_task(task)}, 200
         except Exception as e:
             return error_response('INTERNAL_ERROR', str(e), 500)
 
@@ -185,11 +185,11 @@ class TaskResource(Resource):
                 )
             
             session.commit()
-            
-            response = serialize_task(task)
+
+            response = {'task': serialize_task(task)}
             if assignments_updated > 0:
                 response['assignments_updated'] = assignments_updated
-            
+
             return response, 200
         except Exception as e:
             session.rollback()

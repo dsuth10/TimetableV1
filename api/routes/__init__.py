@@ -4,8 +4,12 @@ import logging
 
 # Import all route resources
 from .aide_routes import (
-    TeacherAideListResource, 
+    TeacherAideListResource,
     TeacherAideResource
+)
+from .availability_routes import (
+    AvailabilityListResource,
+    AvailabilityResource
 )
 from .task_routes import TaskListResource, TaskResource
 from .assignment_routes import (
@@ -32,8 +36,10 @@ def error_response(code: str, message: str, status: int) -> tuple[dict, int]:
     return {'error': {'code': code, 'message': message}}, status
 
 # Register all resources
-api.add_resource(TeacherAideListResource, '/aides')
-api.add_resource(TeacherAideResource, '/aides/<int:aide_id>')
+api.add_resource(TeacherAideListResource, '/teacher-aides')
+api.add_resource(TeacherAideResource, '/teacher-aides/<int:aide_id>')
+api.add_resource(AvailabilityListResource, '/teacher-aides/<int:aide_id>/availability')
+api.add_resource(AvailabilityResource, '/teacher-aides/<int:aide_id>/availability/<int:avail_id>')
 
 api.add_resource(TaskListResource, '/tasks')
 api.add_resource(TaskResource, '/tasks/<int:task_id>')
