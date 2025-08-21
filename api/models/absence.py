@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, DateTime, Date, ForeignKey, func
 from sqlalchemy.orm import relationship
 from typing import List
 from .base import Base, absence_assignments
+from .assignment import Assignment
 
 class Absence(Base):
     __tablename__ = 'absences'
