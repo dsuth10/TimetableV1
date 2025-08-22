@@ -29,7 +29,6 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({ assignments, teacherAides
   if (isLoading) return <div className="loading">Loading timetable...</div>;
   // Note: error handling should be done in the parent component (Schedule.tsx)
 
-
   // Ensure teacherAides and absences are arrays before use
   const validTeacherAides = Array.isArray(teacherAides) ? teacherAides : [];
   const validAbsences = Array.isArray(absences) ? absences : [];

@@ -1,14 +1,14 @@
 export interface Assignment {
   id: number;
+  task_id: number;
+  aide_id: number | null;
+  date: string;
+  start_time: string;
+  end_time: string;
+  status: 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETE';
   task_title: string;
   task_category: string;
-  classroom_name?: string;
-  aide_id: number | null; // Changed from teacher_aide_id to aide_id for consistency with backend
-  date?: string; // Make optional for unassigned tasks
-  day?: string; // Make optional for unassigned tasks
-  time_slot?: string; // Make optional for unassigned tasks
-  start_time?: string; // Make optional for unassigned tasks
-  end_time?: string; // Make optional for unassigned tasks
-  status: 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETE';
   notes?: string;
+  created_at?: string;
+  updated_at?: string;
 }

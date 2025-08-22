@@ -10,7 +10,7 @@ import ToastContainer from './components/ToastContainer';
 import { initializeStores } from './store';
 
 // Lazy load pages for better performance
-import Schedule from './components/Schedule';
+import Schedule from './pages/Schedule';
 const AideManagement = lazy(() => import('./pages/AideManagement'));
 const TaskManagement = lazy(() => import('./pages/TaskManagement'));
 const Settings = lazy(() => import('./pages/Settings'));
