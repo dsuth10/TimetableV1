@@ -1,6 +1,6 @@
 from flask_restful import Resource
 from flask import request
-from api.models import Availability
+from api.models import Availability, TeacherAide
 from api.db import get_db
 from datetime import time
 from .utils import error_response, serialize_availability
@@ -9,6 +9,11 @@ class AvailabilityListResource(Resource):
     def get(self, aide_id):
         session = next(get_db())
         try:
+            # Check if aide exists
+            aide = session.get(TeacherAide, aide_id)
+            if not aide:
+                return error_response('NOT_FOUND', f'Teacher aide {aide_id} not found', 404)
+            
             availabilities = session.query(Availability).filter_by(aide_id=aide_id).all()
             return [serialize_availability(avail) for avail in availabilities], 200
         except Exception as e:
@@ -17,6 +22,11 @@ class AvailabilityListResource(Resource):
     def post(self, aide_id):
         session = next(get_db())
         try:
+            # Check if aide exists
+            aide = session.get(TeacherAide, aide_id)
+            if not aide:
+                return error_response('NOT_FOUND', f'Teacher aide {aide_id} not found', 404)
+            
             data = request.get_json(force=True)
             
             # Validate required fields
@@ -38,6 +48,18 @@ class AvailabilityListResource(Resource):
             
             if start_time >= end_time:
                 return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
+            
+            # Validate time range (08:00 to 15:30 as per database constraints)
+            if start_time < time(8, 0) or end_time > time(15, 30):
+                return error_response('VALIDATION_ERROR', 'Time must be between 08:00 and 15:30', 422)
+            
+            # Check for duplicate availability (aide_id + weekday must be unique)
+            existing = session.query(Availability).filter_by(
+                aide_id=aide_id,
+                weekday=data['weekday']
+            ).first()
+            if existing:
+                return error_response('CONFLICT', f'Availability for {data["weekday"]} already exists for this aide', 409)
             
             # Create availability
             availability = Availability(

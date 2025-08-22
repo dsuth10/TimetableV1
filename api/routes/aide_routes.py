@@ -24,6 +24,13 @@ class TeacherAideListResource(Resource):
                 if field not in data:
                     return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
             
+            # Validate colour_hex if provided
+            colour_hex = data.get('colour_hex')
+            if colour_hex:
+                import re
+                if not re.match(r'^#[0-9A-Fa-f]{6}$', colour_hex):
+                    return error_response('VALIDATION_ERROR', 'Invalid colour_hex format. Use #RRGGBB', 422)
+            
             # Create teacher aide
             aide = TeacherAide(
                 name=data['name'],
@@ -43,7 +50,7 @@ class TeacherAideResource(Resource):
     def get(self, aide_id):
         session = next(get_db())
         try:
-            aide = session.query(TeacherAide).get(aide_id)
+            aide = session.get(TeacherAide, aide_id)
             if not aide:
                 return error_response('NOT_FOUND', f'Teacher aide {aide_id} not found', 404)
             return serialize_aide(aide), 200
@@ -53,7 +60,7 @@ class TeacherAideResource(Resource):
     def put(self, aide_id):
         session = next(get_db())
         try:
-            aide = session.query(TeacherAide).get(aide_id)
+            aide = session.get(TeacherAide, aide_id)
             if not aide:
                 return error_response('NOT_FOUND', f'Teacher aide {aide_id} not found', 404)
             
@@ -76,7 +83,7 @@ class TeacherAideResource(Resource):
     def delete(self, aide_id):
         session = next(get_db())
         try:
-            aide = session.query(TeacherAide).get(aide_id)
+            aide = session.get(TeacherAide, aide_id)
             if not aide:
                 return error_response('NOT_FOUND', f'Teacher aide {aide_id} not found', 404)
             

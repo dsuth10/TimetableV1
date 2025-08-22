@@ -4,8 +4,11 @@ from api.models import Task, SchoolClass
 from api.db import get_db
 from datetime import datetime, date, time
 from sqlalchemy.orm import joinedload
-from .utils import error_response, serialize_task
+from .utils import error_response, serialize_task, serialize_assignment
 from api.recurrence import update_future_assignments
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TaskListResource(Resource):
     def get(self):
@@ -75,10 +78,22 @@ class TaskListResource(Resource):
             if start_time >= end_time:
                 return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
             
+            # Validate recurrence_rule if provided
+            recurrence_rule = data.get('recurrence_rule')
+            if recurrence_rule:
+                # Basic validation for recurrence rule format
+                valid_patterns = [
+                    'FREQ=DAILY',
+                    'FREQ=WEEKLY',
+                    'FREQ=MONTHLY'
+                ]
+                if not any(pattern in recurrence_rule for pattern in valid_patterns):
+                    return error_response('VALIDATION_ERROR', 'Invalid recurrence_rule format', 422)
+            
             # Validate school_class_id if provided
             school_class_id = data.get('school_class_id')
             if school_class_id:
-                school_class = session.query(SchoolClass).get(school_class_id)
+                school_class = session.get(SchoolClass, school_class_id)
                 if not school_class:
                     return error_response('VALIDATION_ERROR', f'SchoolClass with ID {school_class_id} not found', 404)
             
@@ -88,7 +103,7 @@ class TaskListResource(Resource):
                 category=data['category'],
                 start_time=start_time,
                 end_time=end_time,
-                recurrence_rule=data.get('recurrence_rule'),
+                recurrence_rule=recurrence_rule,
                 expires_on=date.fromisoformat(data['expires_on']) if data.get('expires_on') else None,
                 classroom_id=data.get('classroom_id'),
                 school_class_id=school_class_id,
@@ -98,8 +113,22 @@ class TaskListResource(Resource):
             
             session.add(task)
             session.commit()
+            
+            # Generate assignments if task has recurrence
+            assignments = []
+            if recurrence_rule:
+                from api.scheduler import generate_assignments_for_task
+                try:
+                    assignments = generate_assignments_for_task(task, session)
+                    session.commit()
+                except Exception as e:
+                    logger.warning(f"Failed to generate assignments for task {task.id}: {e}")
 
-            return {'task': serialize_task(task)}, 201
+            response_data = {'task': serialize_task(task)}
+            if assignments:
+                response_data['assignments'] = [serialize_assignment(a) for a in assignments]
+            
+            return response_data, 201
         except Exception as e:
             session.rollback()
             return error_response('INTERNAL_ERROR', str(e), 500)
@@ -108,10 +137,10 @@ class TaskResource(Resource):
     def get(self, task_id):
         session = next(get_db())
         try:
-            task = session.query(Task).options(
+            task = session.get(Task, task_id, options=[
                 joinedload(Task.classroom),
                 joinedload(Task.school_class)
-            ).get(task_id)
+            ])
             if not task:
                 return error_response('NOT_FOUND', f'Task {task_id} not found', 404)
             return {'task': serialize_task(task)}, 200
@@ -121,7 +150,7 @@ class TaskResource(Resource):
     def put(self, task_id):
         session = next(get_db())
         try:
-            task = session.query(Task).get(task_id)
+            task = session.get(Task, task_id)
             if not task:
                 return error_response('NOT_FOUND', f'Task {task_id} not found', 404)
             
@@ -161,7 +190,7 @@ class TaskResource(Resource):
             if 'school_class_id' in data:
                 school_class_id = data['school_class_id']
                 if school_class_id:
-                    school_class = session.query(SchoolClass).get(school_class_id)
+                    school_class = session.get(SchoolClass, school_class_id)
                     if not school_class:
                         return error_response('VALIDATION_ERROR', f'SchoolClass with ID {school_class_id} not found', 404)
                 task.school_class_id = school_class_id
@@ -198,7 +227,7 @@ class TaskResource(Resource):
     def delete(self, task_id):
         session = next(get_db())
         try:
-            task = session.query(Task).get(task_id)
+            task = session.get(Task, task_id)
             if not task:
                 return error_response('NOT_FOUND', f'Task {task_id} not found', 404)
             
