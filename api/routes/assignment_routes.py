@@ -148,17 +148,57 @@ class AssignmentResource(Resource):
             
             if 'date' in data:
                 try:
-                    assignment.date = datetime.fromisoformat(data['date'])
+                    # Expect YYYY-MM-DD; store as date
+                    assignment.date = date.fromisoformat(data['date'])
                 except ValueError:
                     return error_response('VALIDATION_ERROR', 'Invalid date format. Use YYYY-MM-DD', 422)
             
+            if 'start_time' in data:
+                try:
+                    assignment.start_time = time.fromisoformat(data['start_time'])
+                except ValueError:
+                    return error_response('VALIDATION_ERROR', 'Invalid start_time format. Use HH:MM', 422)
+
+            if 'end_time' in data:
+                try:
+                    assignment.end_time = time.fromisoformat(data['end_time'])
+                except ValueError:
+                    return error_response('VALIDATION_ERROR', 'Invalid end_time format. Use HH:MM', 422)
+
+            # Validate time ordering if both present (or previously set)
+            if assignment.start_time >= assignment.end_time:
+                return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
+
             if 'status' in data:
-                # Validate status against allowed Assignment statuses
-                from api.models import Assignment # Import Assignment model here to avoid circular import
-                allowed_statuses = [s.value for s in Assignment.AssignmentStatus]
-                if data['status'] not in allowed_statuses:
+                # Validate status against allowed values
+                allowed_statuses = ['UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETE']
+                if str(data['status']).upper() not in allowed_statuses:
                     return error_response('VALIDATION_ERROR', f"Invalid status: {data['status']}. Allowed statuses are {', '.join(allowed_statuses)}", 422)
-                assignment.status = data['status']
+                assignment.status = str(data['status']).upper()
+
+            # Check for conflicts if aide, date, or times changed
+            if assignment.aide_id:
+                conflict = session.query(Assignment).filter(
+                    Assignment.id != assignment_id,
+                    Assignment.aide_id == assignment.aide_id,
+                    Assignment.date == assignment.date,
+                    or_(
+                        and_(Assignment.start_time <= assignment.start_time, assignment.start_time < Assignment.end_time),
+                        and_(Assignment.start_time < assignment.end_time, assignment.end_time <= Assignment.end_time),
+                        and_(assignment.start_time <= Assignment.start_time, Assignment.start_time < assignment.end_time)
+                    )
+                ).first()
+                if conflict:
+                    # Include conflicting assignment details to help client resolve
+                    task = session.query(Task).get(conflict.task_id)
+                    conflict_payload = serialize_assignment(conflict, task)
+                    return {
+                        'error': {
+                            'code': 'CONFLICT',
+                            'message': 'Assignment conflicts with existing assignment'
+                        },
+                        'conflict': conflict_payload
+                    }, 409
             
             session.commit()
             

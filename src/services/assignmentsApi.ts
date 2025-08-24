@@ -60,7 +60,7 @@ export const assignmentsApi = {
   create: (data: CreateAssignmentRequest) => api.post<Assignment>('/assignments', data),
   
   // Update assignment
-  update: (id: number, data: UpdateAssignmentRequest) => api.patch<Assignment>(`/assignments/${id}`, data),
+  update: (id: number, data: UpdateAssignmentRequest) => api.put<Assignment>(`/assignments/${id}`, data),
   
   // Delete assignment
   delete: (id: number) => api.delete(`/assignments/${id}`),

@@ -50,7 +50,8 @@ A Flask-based web application for managing teacher aide assignments and schedule
 - Classroom and school class management
 - **Recurrence engine with iCal RRULE support**
 - **Automatic horizon extension and task modification handling**
-- **Scheduler system for background processing**
+- **Scheduler system for background processing** (disabled in dev to avoid
+  file locks; controllable via `/api/scheduler/*`)
 - Comprehensive testing suite
 
 #### **Frontend Architecture (100% Complete)**
@@ -71,7 +72,8 @@ A Flask-based web application for managing teacher aide assignments and schedule
 - **Unassigned tasks panel**
 - **Task management interface**
 - **Aide management interface**
-- **Conflict resolution modals**
+- **Conflict handling on drag** with backend-validated updates and informative
+  409 responses (includes conflicting assignment details)
 - **Error boundaries and loading states**
 - **Toast notifications for user feedback**
 
@@ -173,6 +175,9 @@ python app.py
 python app.py
 ```
 - Backend runs at http://localhost:5000
+- In development, the background scheduler is disabled by default to avoid
+  SQLite file locks. You can control it via the scheduler endpoints
+  (`/api/scheduler/*`) if needed.
 
 2. Start the React frontend (in a new terminal):
 
@@ -185,7 +190,9 @@ npm run dev
 ```powershell
 npm run dev
 ```
-- Frontend runs at http://localhost:3000
+- Frontend runs at http://localhost:3000 by default. If 3000 is in use, Vite
+  will automatically choose the next available port (e.g., http://localhost:3001)
+  and print the URL in the terminal.
 
 3. Open the application:
 - Visit http://localhost:3000 in your browser
@@ -455,7 +462,8 @@ The absence management system allows marking teacher aides as absent and automat
 - POST /api/assignments/check - Check for scheduling conflicts
 - GET /api/assignments/weekly-matrix - Get structured weekly matrix for UI (organized by day and time slots)
 - GET /api/assignments/{id} - Get a specific assignment
-- PATCH /api/assignments/{id} - Update an assignment
+- PUT /api/assignments/{id} - Update an assignment (validates date/time formats,
+  prevents overlaps, returns 409 with conflicting assignment details on conflict)
 - DELETE /api/assignments/{id} - Delete an assignment
 
 ### Absences

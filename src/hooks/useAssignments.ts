@@ -31,8 +31,7 @@ export const useAssignments = () => {
 
   const updateAssignment = async (id: number, updatedAssignment: Assignment) => {
     try {
-      const response = await assignmentsApi.update(id, updatedAssignment);
-      const data = response.data;
+      const data = await assignmentsApi.update(id, updatedAssignment);
       
       setAssignments(prev =>
         prev.map(a => (a.id === id ? data : a))

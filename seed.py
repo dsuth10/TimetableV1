@@ -326,7 +326,8 @@ def create_absences(session, aides):
     # Create an absence for tomorrow
     absence1 = Absence(
         aide_id=aides[0].id,  # Sarah Johnson
-        date=today + timedelta(days=1),  # Tomorrow
+        start_date=today + timedelta(days=1),  # Tomorrow
+        end_date=today + timedelta(days=1),
         reason="Medical appointment"
     )
     session.add(absence1)
@@ -334,7 +335,8 @@ def create_absences(session, aides):
     # Create an absence for next week
     absence2 = Absence(
         aide_id=aides[2].id,  # Emma Rodriguez
-        date=today + timedelta(days=7),  # Next Monday
+        start_date=today + timedelta(days=7),  # Next Monday
+        end_date=today + timedelta(days=7),
         reason="Personal leave"
     )
     session.add(absence2)
