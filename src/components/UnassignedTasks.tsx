@@ -9,10 +9,19 @@ import {
   MenuItem,
   Chip,
 } from '@mui/material';
-import type { Assignment } from '../types'; // Assuming Assignment type includes task details
+// Unified item the right panel can render: either a Task or an unassigned Assignment
+export type UnassignedItem = {
+  kind: 'task' | 'assignment';
+  id: number;
+  title: string;
+  category: string;
+  start_time?: string;
+  end_time?: string;
+  is_flexible?: boolean;
+};
 
 interface UnassignedTasksProps {
-  assignments: Assignment[];
+  items: UnassignedItem[];
   renderKey?: number; // Force re-render key for draggable registration
 }
 
@@ -25,18 +34,16 @@ const CATEGORY_COLORS: { [key: string]: string } = {
   // Add other categories as needed
 };
 
-const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ assignments, renderKey = 0 }) => {
+const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ items, renderKey = 0 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('ALL');
 
-  const allCategories = ['ALL', ...Array.from(new Set(assignments.map(a => a.task_category)))];
+  const allCategories = ['ALL', ...Array.from(new Set(items.map(a => a.category)))];
 
-  const filteredTasks = assignments.filter((task) => {
-    const matchesStatus = task.status === 'UNASSIGNED';
-    const matchesSearch = task.task_title.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory =
-      filterCategory === 'ALL' || task.task_category === filterCategory;
-    return matchesStatus && matchesSearch && matchesCategory;
+  const filteredItems = items.filter((item) => {
+    const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = filterCategory === 'ALL' || item.category === filterCategory;
+    return matchesSearch && matchesCategory;
   });
 
   return (
@@ -91,15 +98,15 @@ const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ assignments, renderKe
                 border: snapshot.isDraggingOver ? '2px dashed #2196f3' : '1px solid transparent',
               }}
             >
-              {filteredTasks.length === 0 && (
+              {filteredItems.length === 0 && (
                 <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
                   No unassigned tasks found.
                 </Typography>
               )}
-              {filteredTasks.map((task, index) => (
+              {filteredItems.map((item, index) => (
                 <Draggable
-                  key={`draggable-${task.id}-${renderKey}`}
-                  draggableId={task.id.toString()}
+                  key={`draggable-${item.kind}-${item.id}-${renderKey}`}
+                  draggableId={`${item.kind}-${item.id}`}
                   index={index}
                 >
                   {(provided, snapshot) => (
@@ -107,11 +114,11 @@ const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ assignments, renderKe
                       ref={provided.innerRef}
                       {...provided.draggableProps}
                       {...provided.dragHandleProps}
-                      data-testid={`unassigned-task-${task.id}`}
+                      data-testid={`unassigned-${item.kind}-${item.id}`}
                       sx={{
                         mb: 1,
                         bgcolor: snapshot.isDragging ? 'action.selected' : 'background.paper',
-                        border: `1px solid ${CATEGORY_COLORS[task.task_category] || '#ccc'}`,
+                        border: `1px solid ${CATEGORY_COLORS[item.category] || '#ccc'}`,
                         borderRadius: 1,
                         boxShadow: snapshot.isDragging ? 3 : 1,
                         transition: 'all 0.2s ease',
@@ -128,22 +135,22 @@ const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ assignments, renderKe
                     >
                       <Box>
                         <Typography variant="body1" component="div" sx={{ fontWeight: 'medium' }}>
-                          {task.task_title}
+                          {item.title}
                         </Typography>
                         <Typography variant="body2" color="text.primary" sx={{ mb: 1 }}>
-                          {`${task.start_time} - ${task.end_time}`}
+                          {item.start_time && item.end_time ? `${item.start_time} - ${item.end_time}` : 'No time set'}
                         </Typography>
                         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                           <Chip
-                            label={task.task_category}
+                            label={item.category}
                             size="small"
                             sx={{
-                              bgcolor: CATEGORY_COLORS[task.task_category] || '#ccc',
+                              bgcolor: CATEGORY_COLORS[item.category] || '#ccc',
                               color: 'white',
                               fontSize: '0.75rem',
                             }}
                           />
-                          {task.is_flexible && (
+                          {item.is_flexible && (
                             <Chip
                               label="Flexible"
                               size="small"

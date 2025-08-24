@@ -697,11 +697,13 @@ class AssignmentListResource(Resource):
         session = next(get_db())
         try:
             data = request.get_json(force=True)
+            logger.info("POST /assignments payload: %s", data)
             
             # Validate required fields
             required_fields = ['task_id', 'date', 'start_time', 'end_time']
             for field in required_fields:
                 if field not in data:
+                    logger.warning("/assignments missing field: %s in %s", field, data)
                     return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
             
             # Validate task exists with eager loading
@@ -709,6 +711,7 @@ class AssignmentListResource(Resource):
                 joinedload(Task.assignments)
             ).get(data['task_id'])
             if not task:
+                logger.warning("/assignments task not found: %s", data.get('task_id'))
                 return error_response('NOT_FOUND', 'Task not found', 404)
             
             # Validate aide if provided
@@ -718,12 +721,14 @@ class AssignmentListResource(Resource):
                     joinedload(TeacherAide.assignments)
                 ).get(data['aide_id'])
                 if not aide:
+                    logger.warning("/assignments aide not found: %s", data.get('aide_id'))
                     return error_response('NOT_FOUND', 'Teacher aide not found', 404)
             
             # Validate date format
             try:
                 assignment_date = date.fromisoformat(data['date'])
             except ValueError:
+                logger.warning("/assignments invalid date: %s", data.get('date'))
                 return error_response('VALIDATION_ERROR', 'Invalid date format. Use YYYY-MM-DD', 422)
             
             # Validate time format
@@ -731,9 +736,11 @@ class AssignmentListResource(Resource):
                 start_time = time.fromisoformat(data['start_time'])
                 end_time = time.fromisoformat(data['end_time'])
             except ValueError:
+                logger.warning("/assignments invalid time(s): start=%s end=%s", data.get('start_time'), data.get('end_time'))
                 return error_response('VALIDATION_ERROR', 'Invalid time format. Use HH:MM', 422)
             
             if start_time >= end_time:
+                logger.warning("/assignments start_time >= end_time: start=%s end=%s", data.get('start_time'), data.get('end_time'))
                 return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
             
             # Check for conflicts if aide is assigned
@@ -752,6 +759,7 @@ class AssignmentListResource(Resource):
                 ).first()
                 
                 if conflicts:
+                    logger.info("/assignments conflict detected for aide_id=%s date=%s", aide.id, assignment_date)
                     return error_response('CONFLICT', 'Teacher aide has a scheduling conflict', 409)
             
             # Create assignment
@@ -761,7 +769,7 @@ class AssignmentListResource(Resource):
                 date=assignment_date,
                 start_time=start_time,
                 end_time=end_time,
-                status=Status.ASSIGNED if aide else Status.UNASSIGNED
+                status='ASSIGNED' if aide else 'UNASSIGNED'
             )
             
             session.add(assignment)
@@ -777,6 +785,7 @@ class AssignmentListResource(Resource):
             
         except Exception as e:
             session.rollback()
+            logger.exception("/assignments error: %s | payload=%s", str(e), request.get_json(silent=True))
             return error_response('INTERNAL_ERROR', str(e), 500)
 
 class AssignmentResource(Resource):

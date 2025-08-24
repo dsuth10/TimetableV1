@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
-import { Paper, Typography, Box, CircularProgress, Alert } from '@mui/material';
+import { Paper, Typography, Box, CircularProgress, Alert, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
+import { useSearchParams } from 'react-router-dom';
 import { useAssignments } from '../hooks/useAssignments';
 import { useTeacherAides } from '../hooks/useTeacherAides';
 import { useAbsences } from '../hooks/useAbsences';
@@ -8,11 +9,18 @@ import UnassignedTasks from './UnassignedTasks';
 import TimetableGrid from './TimetableGrid/TimetableGrid';
 import type { Assignment } from '../types/assignment';
 import ConflictResolutionModal from './ConflictResolutionModal';
+import { useAidesStore } from '../store';
+import { tasksApi } from '../services/tasksApi';
+import type { Task } from '../types/task';
+import type { UnassignedItem } from './UnassignedTasks';
 
 const Schedule: React.FC = () => {
   const { assignments, isLoading: assignmentsLoading, error: assignmentsError, updateAssignment } = useAssignments();
   const { teacherAides, isLoading: aidesLoading, error: aidesError } = useTeacherAides();
   const { absences, isLoading: absencesLoading, error: absencesError } = useAbsences();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedAideIdInUrl = searchParams.get('aideId');
+  const { selectedAideId, setSelectedAideId } = useAidesStore();
   const [localAssignments, setLocalAssignments] = useState<Assignment[]>([]);
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const [conflictDetails, setConflictDetails] = useState<{
@@ -20,6 +28,7 @@ const Schedule: React.FC = () => {
     newAssignmentData: Partial<Assignment>;
     originalAssignment: Assignment;
   } | null>(null);
+  const [unassignedTasks, setUnassignedTasks] = useState<Task[]>([]);
 
   useEffect(() => {
     console.log('Schedule: assignments changed', assignments);
@@ -30,6 +39,56 @@ const Schedule: React.FC = () => {
       setLocalAssignments([]);
     }
   }, [assignments]);
+
+  // Fetch unassigned Tasks (those without assignments)
+  useEffect(() => {
+    const fetchUnassignedTasks = async () => {
+      try {
+        const data = await tasksApi.getUnassigned();
+        const tasks = Array.isArray((data as any)?.tasks) ? (data as any).tasks : Array.isArray(data) ? data : [];
+        setUnassignedTasks(tasks);
+      } catch (err) {
+        console.error('Failed to fetch unassigned tasks', err);
+        setUnassignedTasks([]);
+      }
+    };
+    fetchUnassignedTasks();
+  }, []);
+
+  // Sync aide selection between URL, store, and available aides
+  useEffect(() => {
+    if (!Array.isArray(teacherAides) || teacherAides.length === 0) return;
+
+    const aideIds = new Set(teacherAides.map(a => a.id));
+    const urlId = selectedAideIdInUrl ? parseInt(selectedAideIdInUrl, 10) : null;
+    const storeId = typeof selectedAideId === 'number' ? selectedAideId : null;
+
+    let effectiveId: number | null = null;
+    if (urlId && aideIds.has(urlId)) effectiveId = urlId;
+    else if (storeId && aideIds.has(storeId)) effectiveId = storeId;
+    else effectiveId = teacherAides[0]?.id ?? null;
+
+    if (effectiveId == null) return;
+
+    if (storeId !== effectiveId) setSelectedAideId(effectiveId);
+    if (urlId !== effectiveId) {
+      setSearchParams(prev => {
+        const p = new URLSearchParams(prev);
+        p.set('aideId', String(effectiveId));
+        return p;
+      }, { replace: true });
+    }
+  }, [teacherAides, selectedAideIdInUrl, selectedAideId, setSelectedAideId, setSearchParams]);
+
+  const handleAideChange = (event: React.ChangeEvent<{ value: unknown }>) => {
+    const nextId = Number(event.target.value);
+    setSelectedAideId(nextId);
+    setSearchParams(prev => {
+      const p = new URLSearchParams(prev);
+      p.set('aideId', String(nextId));
+      return p;
+    }, { replace: true });
+  };
 
   const handleDragEnd = async (result: DropResult) => {
     console.log('🎯 DRAG END EVENT:', result);
@@ -54,8 +113,21 @@ const Schedule: React.FC = () => {
       return;
     }
 
-    const assignment = localAssignments.find(a => a.id.toString() === draggableId);
-    if (!assignment) {
+    // draggableId can be `assign-<id>` or `task-<id>` for right panel items
+    const isTaskDrag = draggableId.startsWith('task-');
+    const isAssignDrag = draggableId.startsWith('assign-');
+
+    const draggableNumericId = (() => {
+      const parts = draggableId.split('-');
+      const last = parts[parts.length - 1];
+      const parsed = parseInt(last, 10);
+      return Number.isNaN(parsed) ? null : parsed;
+    })();
+
+    const assignment = !isTaskDrag
+      ? localAssignments.find(a => a.id.toString() === (isAssignDrag ? String(draggableNumericId) : draggableId))
+      : undefined;
+    if (!assignment && !isTaskDrag) {
       console.error('Assignment not found for draggableId:', draggableId);
       return;
     }
@@ -66,6 +138,10 @@ const Schedule: React.FC = () => {
 
     // Handle dropping back to unassigned
     if (destination.droppableId === 'unassigned') {
+      if (isTaskDrag) {
+        // Task dragged back to unassigned panel: no-op (it is already unassigned)
+        return;
+      }
       console.log('Dropping to unassigned tasks');
       const updatedAssignment = {
         ...assignment,
@@ -127,35 +203,73 @@ const Schedule: React.FC = () => {
       endTime.setHours(startHour, startMinute + 30, 0, 0);
       const endTimeString = endTime.toTimeString().slice(0, 5);
 
-      // Prepare update data
-      const updatedAssignment: Assignment = {
-        ...assignment,
-        aide_id: destAideId,
-        date: targetDate.toISOString().split('T')[0],
-        day: destDay,
-        start_time: destTimeSlot,
-        end_time: endTimeString,
-        status: 'ASSIGNED',
-      } as Assignment;
+      if (isTaskDrag) {
+        // Create a new assignment from a Task (no existing assignment row)
+        if (draggableNumericId == null) return;
+        const newAssignmentPayload = {
+          taskId: draggableNumericId,
+          aideId: destAideId,
+          day: destDay,
+          startTime: destTimeSlot,
+          // Duration: derive from task times if available, else 30m; we will compute endTime on the server or separately
+          duration: 30,
+        };
+        try {
+          // Compute date string for today-based weekday as used elsewhere
+          const created = await (async () => {
+            const res = await fetch('/api/assignments', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                task_id: newAssignmentPayload.taskId,
+                aide_id: newAssignmentPayload.aideId,
+                date: targetDate.toISOString().split('T')[0],
+                start_time: destTimeSlot,
+                end_time: endTimeString,
+              }),
+            });
+            if (!res.ok) throw new Error('Failed to create assignment');
+            return res.json();
+          })();
 
-      console.log('Updating assignment:', updatedAssignment);
+          // Insert created assignment into local state
+          setLocalAssignments(prev => [...prev, created as Assignment]);
+          // Remove the task from local unassignedTasks list
+          setUnassignedTasks(prev => prev.filter(t => t.id !== draggableNumericId));
+        } catch (e) {
+          console.error('Failed to create assignment from task drag', e);
+        }
+      } else if (assignment) {
+        // Move/update an existing assignment
+        const updatedAssignment: Assignment = {
+          ...assignment,
+          aide_id: destAideId,
+          date: targetDate.toISOString().split('T')[0],
+          day: destDay,
+          start_time: destTimeSlot,
+          end_time: endTimeString,
+          status: 'ASSIGNED',
+        } as Assignment;
 
-      try {
-        // Optimistic update
-        setLocalAssignments((prevAssignments) => {
-          const filtered = prevAssignments.filter((a) => a.id !== assignment.id);
-          return [...filtered, updatedAssignment];
-        });
+        console.log('Updating assignment:', updatedAssignment);
 
-        await updateAssignment(assignment.id, updatedAssignment);
-        console.log('Successfully updated assignment');
-      } catch (error) {
-        console.error('Failed to update assignment:', error);
-        // Revert local state on error
-        setLocalAssignments((prevAssignments) => {
-          const filtered = prevAssignments.filter((a) => a.id !== updatedAssignment.id);
-          return [...filtered, assignment];
-        });
+        try {
+          // Optimistic update
+          setLocalAssignments((prevAssignments) => {
+            const filtered = prevAssignments.filter((a) => a.id !== assignment.id);
+            return [...filtered, updatedAssignment];
+          });
+
+          await updateAssignment(assignment.id, updatedAssignment);
+          console.log('Successfully updated assignment');
+        } catch (error) {
+          console.error('Failed to update assignment:', error);
+          // Revert local state on error
+          setLocalAssignments((prevAssignments) => {
+            const filtered = prevAssignments.filter((a) => a.id !== updatedAssignment.id);
+            return [...filtered, assignment];
+          });
+        }
       }
     }
   };
@@ -226,6 +340,10 @@ const Schedule: React.FC = () => {
     );
   }
 
+  const selectedAide = Array.isArray(teacherAides)
+    ? teacherAides.find(a => a.id === (typeof selectedAideId === 'number' ? selectedAideId : Number(selectedAideIdInUrl)))
+    : undefined;
+
   return (
     <Box sx={{ display: 'flex', height: '100%' }} data-testid="schedule-container">
       <DragDropContext onDragEnd={handleDragEnd}>
@@ -235,16 +353,63 @@ const Schedule: React.FC = () => {
               <Typography variant="h6" gutterBottom>
                 Schedule
               </Typography>
+              <Box sx={{ mb: 2 }}>
+                <FormControl size="small" sx={{ minWidth: 260 }}>
+                  <InputLabel id="aide-select-label">Select Teacher Aide</InputLabel>
+                  <Select
+                    labelId="aide-select-label"
+                    id="aide-select"
+                    label="Select Teacher Aide"
+                    value={selectedAide ? selectedAide.id : ''}
+                    onChange={handleAideChange as any}
+                  >
+                    {Array.isArray(teacherAides) && teacherAides.map((aide) => (
+                      <MenuItem key={aide.id} value={aide.id}>
+                        {aide.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
               <TimetableGrid 
                 assignments={localAssignments}
-                teacherAides={teacherAides}
+                teacherAides={selectedAide ? [selectedAide] : []}
                 isLoading={assignmentsLoading || aidesLoading || absencesLoading}
                 absences={absences}
               />
             </Paper>
           </Box>
         </Box>
-        <UnassignedTasks assignments={localAssignments} />
+        {
+          (() => {
+            // Normalize combined unassigned items
+            const unassignedAssignmentItems: UnassignedItem[] = localAssignments
+              .filter(a => a.status === 'UNASSIGNED')
+              .map(a => ({
+                kind: 'assignment',
+                id: a.id,
+                title: a.task_title,
+                category: a.task_category,
+                start_time: a.start_time,
+                end_time: a.end_time,
+                is_flexible: a.is_flexible,
+              }));
+
+            const unassignedTaskItems: UnassignedItem[] = unassignedTasks
+              .map(t => ({
+                kind: 'task',
+                id: t.id,
+                title: t.title,
+                category: t.category,
+                start_time: t.start_time,
+                end_time: t.end_time,
+                is_flexible: t.is_flexible,
+              }));
+
+            const combined: UnassignedItem[] = [...unassignedAssignmentItems, ...unassignedTaskItems];
+            return <UnassignedTasks items={combined} />;
+          })()
+        }
       </DragDropContext>
 
       {conflictDetails && (

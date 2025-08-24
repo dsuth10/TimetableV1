@@ -7,12 +7,14 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 import { useAbsences } from '../hooks/useAbsences';
 import { absencesApi, aidesApi } from '../services';
+import { useNavigate } from 'react-router-dom';
 import { TeacherAide } from '../types';
 import { useAidesStore } from '../store';
 
 function AideManagement() {
   const { aides, loading, error, setAides, setLoading, setError } = useAidesStore();
   const { absences, isLoading: absencesLoading, error: absencesError } = useAbsences();
+  const navigate = useNavigate();
 
   const [openAbsenceModal, setOpenAbsenceModal] = useState(false);
   const [openAddAideModal, setOpenAddAideModal] = useState(false);
@@ -92,6 +94,12 @@ function AideManagement() {
     }
   };
 
+  const handleViewSchedule = (aide: TeacherAide) => {
+    // Set the selected aide in store and navigate with query param for deep-linking
+    useAidesStore.getState().setSelectedAideId(aide.id);
+    navigate({ pathname: '/', search: `?aideId=${aide.id}` });
+  };
+
   const handleAddAide = async () => {
     if (newAideName && newAideQualifications) {
       try {
@@ -160,8 +168,11 @@ function AideManagement() {
               {aide.email && (
                 <Typography variant="body2">Email: {aide.email}</Typography>
               )}
-              <Button variant="outlined" sx={{ mt: 1 }} onClick={() => handleOpenAbsenceModal(aide)}>
+              <Button variant="outlined" sx={{ mt: 1, mr: 1 }} onClick={() => handleOpenAbsenceModal(aide)}>
                 Mark as Absent
+              </Button>
+              <Button variant="contained" sx={{ mt: 1 }} onClick={() => handleViewSchedule(aide)}>
+                View Schedule
               </Button>
               <Box sx={{ mt: 2 }}>
                 <Typography variant="subtitle1">Absences:</Typography>

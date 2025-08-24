@@ -79,7 +79,7 @@ export const useAidesStore = create<AidesStore>()(
     }),
     {
       name: 'aides-storage',
-      partialize: (state) => ({ aides: state.aides }),
+      partialize: (state) => ({ aides: state.aides, selectedAideId: state.selectedAideId }),
     }
   )
 );

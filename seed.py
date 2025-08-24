@@ -115,10 +115,17 @@ def create_school_classes(session):
     return school_classes
 
 def create_tasks(session, classrooms, school_classes):
-    """Create demo tasks of different categories with all required fields."""
+    """Create demo tasks for two types: fixed-time and flexible.
+
+    - Fixed-time tasks: is_flexible=False, have concrete start/end times and (optionally) recurrence.
+    - Flexible tasks: is_flexible=True, times are placeholders on the Task record (DB requires non-null),
+      and no assignments are pre-generated for them. They are intended to be dragged into the timetable
+      to set actual times at scheduling.
+    """
     today = date.today()
     tasks = [
         # Playground duties
+        # Flexible examples (times are placeholders; real times are set when dropped)
         Task(
             title="Morning Playground Supervision",
             category="PLAYGROUND",
@@ -295,26 +302,34 @@ def create_tasks(session, classrooms, school_classes):
     return tasks
 
 def create_assignments(session, tasks, aides):
-    """Create sample assignments for the current week."""
+    """Create sample assignments for the current week.
+
+    - Skip flexible tasks entirely (they should be scheduled via drag-and-drop).
+    - For fixed-time tasks, generate weekly assignments, assign to available aides when possible,
+      and persist unassigned rows as UNASSIGNED so they show in the schedule.
+    """
     today = date.today()
     start_date = today - timedelta(days=today.weekday())  # Start of current week
     end_date = start_date + timedelta(days=4)  # End of week (Friday)
     
-    # Create assignments for each task
+    # Create assignments for each non-flexible task
     for task in tasks:
+        if task.is_flexible:
+            # Do not pre-generate assignments for flexible tasks
+            continue
+
         assignments = task.generate_assignments(start_date, end_date, session)
         for assignment in assignments:
-            # Leave some tasks unassigned for testing drag and drop
-            if task.title in ["Computer Lab Support", "Music Class Support", "Special Assembly Support", "Field Trip Support"]:
-                assignment.status = 'UNASSIGNED'
-                continue
-                
-            # Assign to a random aide if available
+            # Persist the assignment row first
+            assignment.status = 'UNASSIGNED'
+
+            # Try to assign to the first available aide
             for aide in aides:
                 if aide.is_available(assignment.date, assignment.start_time, assignment.end_time):
                     assignment.aide_id = aide.id
                     assignment.status = 'ASSIGNED'
                     break
+
             session.add(assignment)
     
     session.commit()

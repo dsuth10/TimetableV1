@@ -16,6 +16,7 @@ A Flask-based web application for managing teacher aide assignments and schedule
 - **Modern React frontend with TypeScript and Material-UI**
 - **Drag-and-drop assignment functionality**
 - **Real-time conflict resolution**
+- **Aide schedule selection with deep-linking (`?aideId=`)**
 - Comprehensive API with full CRUD operations
 
 ## Tech Stack
@@ -70,6 +71,9 @@ A Flask-based web application for managing teacher aide assignments and schedule
 - **Schedule component with drag-and-drop**
 - **Timetable grid with weekly view**
 - **Unassigned tasks panel**
+- **Aide selection dropdown** on Schedule page with URL sync (`?aideId=`)
+- **Drag-to-create**: dropping a flexible Task creates an Assignment at the dropped slot
+- **Unified unassigned panel**: shows both unassigned Assignments and flexible Tasks; tasks become assignments when dropped
 - **Task management interface**
 - **Aide management interface**
 - **Conflict handling on drag** with backend-validated updates and informative
@@ -144,8 +148,10 @@ venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-4. Initialize the database:
+4. Initialize (or reset) the database with fresh dummy data:
 ```bash
+# Optional: remove existing DB if you want a clean slate
+rm -f instance/timetable.db
 python seed.py
 ```
 
@@ -163,10 +169,11 @@ npm run dev
 
 ### Running the Application
 
-1. Start the Flask backend:
+1. Start (or restart) the Flask backend:
 
 **Using Bash (Git Bash):**
 ```bash
+# If already running, stop it first, then start
 python app.py
 ```
 

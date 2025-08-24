@@ -65,8 +65,8 @@ class AssignmentListResource(Resource):
         try:
             data = request.get_json(force=True)
             
-            # Validate required fields
-            required_fields = ['task_id', 'aide_id', 'date']
+            # Validate required fields (ensure times are provided to satisfy DB constraints)
+            required_fields = ['task_id', 'aide_id', 'date', 'start_time', 'end_time']
             for field in required_fields:
                 if field not in data:
                     return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
@@ -83,14 +83,24 @@ class AssignmentListResource(Resource):
             
             # Validate date format
             try:
-                date = datetime.fromisoformat(data['date'])
+                date_value = date.fromisoformat(data['date'])
             except ValueError:
                 return error_response('VALIDATION_ERROR', 'Invalid date format. Use YYYY-MM-DD', 422)
+
+            # Validate time format
+            try:
+                start_time = time.fromisoformat(data['start_time'])
+                end_time = time.fromisoformat(data['end_time'])
+            except ValueError:
+                return error_response('VALIDATION_ERROR', 'Invalid time format. Use HH:MM', 422)
+
+            if start_time >= end_time:
+                return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
             
             # Check for existing assignment
             existing = session.query(Assignment).filter_by(
                 task_id=data['task_id'],
-                date=date
+                date=date_value
             ).first()
             
             if existing:
@@ -100,7 +110,9 @@ class AssignmentListResource(Resource):
             assignment = Assignment(
                 task_id=data['task_id'],
                 aide_id=data['aide_id'],
-                date=date,
+                date=date_value,
+                start_time=start_time,
+                end_time=end_time,
                 status='ASSIGNED'
             )
             
