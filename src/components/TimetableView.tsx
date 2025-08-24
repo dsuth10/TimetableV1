@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Droppable, Draggable } from 'react-beautiful-dnd';
+import { Droppable, Draggable } from '@hello-pangea/dnd';
 import { Box, Typography, CircularProgress, Menu, MenuItem } from '@mui/material';
 import { Assignment } from '../types/assignment';
 

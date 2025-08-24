@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DragDropContext, DropResult } from 'react-beautiful-dnd';
+import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import { Paper, Typography, Box, CircularProgress, Alert } from '@mui/material';
 import { useAssignments } from '../hooks/useAssignments';
 import { useTeacherAides } from '../hooks/useTeacherAides';
@@ -32,7 +32,16 @@ const Schedule: React.FC = () => {
   }, [assignments]);
 
   const handleDragEnd = async (result: DropResult) => {
-    if (!result.destination) return;
+    console.log('🎯 DRAG END EVENT:', result);
+    console.log('Source:', result.source);
+    console.log('Destination:', result.destination);
+    console.log('Draggable ID:', result.draggableId);
+    
+    if (!result.destination) {
+      console.log('❌ No destination detected - drag cancelled');
+      console.log('This means the drop zones are not being recognized');
+      return;
+    }
 
     const { source, destination, draggableId } = result;
 
@@ -41,89 +50,23 @@ const Schedule: React.FC = () => {
       source.droppableId === destination.droppableId &&
       source.index === destination.index
     ) {
+      console.log('Dropped in same location, no action needed');
       return;
     }
 
     const assignment = localAssignments.find(a => a.id.toString() === draggableId);
-    if (!assignment) return;
-
-    // Determine the source and destination aide/day/time
-    if (source.droppableId !== 'unassigned') {
-      const [, ,] = source.droppableId.split('-');
-    }
-
-    const [destAideIdStr, destDay, destTimeSlot] = destination.droppableId.split('-');
-    const destAideId: number | null = destAideIdStr ? parseInt(destAideIdStr) : null; // Explicitly type as number | null
-
-    // Validate parsed values
-    if (destAideId === null || isNaN(destAideId) || !destDay || !destTimeSlot) {
-      console.error('Invalid destination droppableId:', destination.droppableId);
+    if (!assignment) {
+      console.error('Assignment not found for draggableId:', draggableId);
       return;
     }
 
-    // Prepare common update data
-    const commonUpdateData: Partial<Assignment> = {
-      date: new Date().toISOString().split('T')[0], // Use current date for now, will need to be dynamic
-      day: destDay,
-      start_time: destTimeSlot, // Use the start time of the destination slot
-      end_time: (parseInt(destTimeSlot.split(':')[0]) + 0.5).toString().padStart(2, '0') + ':00', // Assuming 30 min slots
-      aide_id: destAideId,
-    };
+    console.log('Found assignment:', assignment);
+    console.log('Source:', source.droppableId);
+    console.log('Destination:', destination.droppableId);
 
-    // Case 1: Dragging from Unassigned Tasks to Timetable
-    if (source.droppableId === 'unassigned') {
-      const updatedAssignment: Assignment = {
-        ...assignment,
-        ...commonUpdateData,
-        status: 'ASSIGNED', // Explicitly assign the literal type
-        // Ensure start_time, end_time, date are always strings when assigned
-        start_time: commonUpdateData.start_time || assignment.start_time || '',
-        end_time: commonUpdateData.end_time || assignment.end_time || '',
-        date: commonUpdateData.date || assignment.date || '',
-      } as Assignment; // Cast to Assignment to satisfy TypeScript
-
-      try {
-        // Check for conflicts first
-        const conflictCheck = await fetch(`/api/assignments/check`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            aide_id: updatedAssignment.aide_id,
-            date: updatedAssignment.date,
-            start_time: updatedAssignment.start_time,
-            end_time: updatedAssignment.end_time,
-          }),
-        });
-        const conflictData = await conflictCheck.json();
-
-        if (conflictData.has_conflict) {
-          setConflictDetails({
-            conflictingAssignment: conflictData.conflicting_assignment,
-            newAssignmentData: updatedAssignment,
-            originalAssignment: assignment,
-          });
-          setConflictModalOpen(true);
-          return; // Prevent immediate assignment if conflict
-        }
-
-        // Optimistic update
-        setLocalAssignments((prevAssignments) => {
-          const filtered = prevAssignments.filter((a) => a.id !== assignment.id);
-          return [...filtered, updatedAssignment];
-        });
-
-        await updateAssignment(assignment.id, updatedAssignment);
-      } catch (error) {
-        console.error('Failed to update assignment:', error);
-        // Revert local state on error
-        setLocalAssignments((prevAssignments) => {
-          const filtered = prevAssignments.filter((a) => a.id !== updatedAssignment.id);
-          return [...filtered, assignment];
-        });
-      }
-    }
-    // Case 2: Dragging from Timetable to Unassigned Tasks
-    else if (destination.droppableId === 'unassigned') {
+    // Handle dropping back to unassigned
+    if (destination.droppableId === 'unassigned') {
+      console.log('Dropping to unassigned tasks');
       const updatedAssignment = {
         ...assignment,
         aide_id: null,
@@ -140,6 +83,7 @@ const Schedule: React.FC = () => {
           return [...filtered, updatedAssignment];
         });
         await updateAssignment(assignment.id, updatedAssignment);
+        console.log('Successfully moved to unassigned');
       } catch (error) {
         console.error('Failed to update assignment:', error);
         // Revert local state if API update fails
@@ -148,49 +92,66 @@ const Schedule: React.FC = () => {
           return [...filtered, assignment];
         });
       }
+      return;
     }
-    // Case 3: Dragging from one slot in Timetable to another slot in Timetable
-    else {
+
+    // Handle dropping to timetable slots
+    if (destination.droppableId !== 'unassigned') {
+      console.log('Dropping to timetable slot:', destination.droppableId);
+      
+      // Parse destination droppable ID (format: "aideId-day-time")
+      const parts = destination.droppableId.split('-');
+      if (parts.length !== 3) {
+        console.error('Invalid destination format:', destination.droppableId);
+        return;
+      }
+
+      const [destAideIdStr, destDay, destTimeSlot] = parts;
+      const destAideId = parseInt(destAideIdStr);
+
+      if (isNaN(destAideId) || !destDay || !destTimeSlot) {
+        console.error('Invalid parsed values:', { destAideId, destDay, destTimeSlot });
+        return;
+      }
+
+      // Calculate the date for the destination day
+      const today = new Date();
+      const dayIndex = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].indexOf(destDay);
+      const targetDate = new Date(today);
+      targetDate.setDate(today.getDate() - today.getDay() + 1 + dayIndex);
+
+      // Calculate end time (30 minutes after start time)
+      const startHour = parseInt(destTimeSlot.split(':')[0]);
+      const startMinute = parseInt(destTimeSlot.split(':')[1]);
+      const endTime = new Date();
+      endTime.setHours(startHour, startMinute + 30, 0, 0);
+      const endTimeString = endTime.toTimeString().slice(0, 5);
+
+      // Prepare update data
       const updatedAssignment: Assignment = {
         ...assignment,
-        ...commonUpdateData,
-        status: 'ASSIGNED', // Explicitly assign the literal type
-        start_time: commonUpdateData.start_time || assignment.start_time || '',
-        end_time: commonUpdateData.end_time || assignment.end_time || '',
-        date: commonUpdateData.date || assignment.date || '',
-      } as Assignment; // Cast to Assignment to satisfy TypeScript
+        aide_id: destAideId,
+        date: targetDate.toISOString().split('T')[0],
+        day: destDay,
+        start_time: destTimeSlot,
+        end_time: endTimeString,
+        status: 'ASSIGNED',
+      } as Assignment;
+
+      console.log('Updating assignment:', updatedAssignment);
 
       try {
-        // Check for conflicts
-        const conflictCheck = await fetch(`/api/assignments/check`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            aide_id: updatedAssignment.aide_id,
-            date: updatedAssignment.date,
-            start_time: updatedAssignment.start_time,
-            end_time: updatedAssignment.end_time,
-          }),
-        });
-        const conflictData = await conflictCheck.json();
-
-        if (conflictData.has_conflict) {
-          setConflictDetails({
-            conflictingAssignment: conflictData.conflicting_assignment,
-            newAssignmentData: updatedAssignment,
-            originalAssignment: assignment,
-          });
-          setConflictModalOpen(true);
-          return; // Prevent immediate assignment if conflict
-        }
-
+        // Optimistic update
         setLocalAssignments((prevAssignments) => {
           const filtered = prevAssignments.filter((a) => a.id !== assignment.id);
           return [...filtered, updatedAssignment];
         });
+
         await updateAssignment(assignment.id, updatedAssignment);
+        console.log('Successfully updated assignment');
       } catch (error) {
         console.error('Failed to update assignment:', error);
+        // Revert local state on error
         setLocalAssignments((prevAssignments) => {
           const filtered = prevAssignments.filter((a) => a.id !== updatedAssignment.id);
           return [...filtered, assignment];
@@ -288,8 +249,10 @@ const Schedule: React.FC = () => {
 
       {conflictDetails && (
         <ConflictResolutionModal
-          isOpen={conflictModalOpen}
+          open={conflictModalOpen}
           onClose={() => handleConflictResolve('cancel')}
+          onResolve={handleConflictResolve}
+          conflictDetails={conflictDetails}
         />
       )}
     </Box>

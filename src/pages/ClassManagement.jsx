@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Typography, Button, TextField, Alert, CircularProgress, Paper } from '@mui/material';
 import { useDropzone } from 'react-dropzone';
 import Papa from 'papaparse';
-import api from '../services/api';
+import { api } from '../services/api';
 import { DataGrid } from '@mui/x-data-grid';
 import SchoolClassForm from '../components/SchoolClassForm';
 

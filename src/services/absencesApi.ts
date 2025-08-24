@@ -10,12 +10,22 @@ export interface CreateAbsenceRequest {
 
 export interface UpdateAbsenceRequest extends Partial<CreateAbsenceRequest> {}
 
+// Backend response format for absences
+interface AbsencesResponse {
+  items: Absence[];
+  page: number;
+  pages: number;
+  per_page: number;
+  total: number;
+}
+
 // Absence API functions
 export const absencesApi = {
   // Get all absences with optional week filter
-  getAll: (week?: string) => {
+  getAll: async (week?: string) => {
     const params = week ? `?week=${week}` : '';
-    return api.get<Absence[]>(`/absences${params}`);
+    const response = await api.get<AbsencesResponse>(`/absences${params}`);
+    return { data: response.items };
   },
   
   // Get absence by ID
@@ -31,9 +41,14 @@ export const absencesApi = {
   delete: (id: number) => api.delete(`/absences/${id}`),
   
   // Get absences by aide
-  getByAide: (aideId: number) => api.get<Absence[]>(`/absences/aide/${aideId}`),
+  getByAide: async (aideId: number) => {
+    const response = await api.get<AbsencesResponse>(`/absences/aide/${aideId}`);
+    return { data: response.items };
+  },
   
   // Get absences by date range
-  getByDateRange: (startDate: string, endDate: string) => 
-    api.get<Absence[]>(`/absences?start_date=${startDate}&end_date=${endDate}`),
+  getByDateRange: async (startDate: string, endDate: string) => {
+    const response = await api.get<AbsencesResponse>(`/absences?start_date=${startDate}&end_date=${endDate}`);
+    return { data: response.items };
+  },
 };

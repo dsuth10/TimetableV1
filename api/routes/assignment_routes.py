@@ -467,6 +467,7 @@ class AssignmentWeeklyMatrixResource(Resource):
                             'start_time': assignment.start_time.strftime('%H:%M'),
                             'end_time': assignment.end_time.strftime('%H:%M'),
                             'status': assignment.status,
+                            'is_flexible': assignment.task.is_flexible if assignment.task else False,
                             'classroom': assignment.task.classroom.name if assignment.task and assignment.task.classroom else None,
                             'school_class': assignment.task.school_class.name if assignment.task and assignment.task.school_class else None,
                             'notes': assignment.task.notes if assignment.task else None

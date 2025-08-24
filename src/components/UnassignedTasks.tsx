@@ -1,21 +1,19 @@
 import React, { useState } from 'react';
-import { Droppable, Draggable } from 'react-beautiful-dnd';
+import { Droppable, Draggable } from '@hello-pangea/dnd';
 import {
   Box,
   Paper,
   Typography,
   List,
-
-  ListItemText,
   TextField,
   MenuItem,
   Chip,
-  Tooltip,
 } from '@mui/material';
 import type { Assignment } from '../types'; // Assuming Assignment type includes task details
 
 interface UnassignedTasksProps {
   assignments: Assignment[];
+  renderKey?: number; // Force re-render key for draggable registration
 }
 
 // Define category colors (example, align with backend if possible)
@@ -27,7 +25,7 @@ const CATEGORY_COLORS: { [key: string]: string } = {
   // Add other categories as needed
 };
 
-const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ assignments }) => {
+const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ assignments, renderKey = 0 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('ALL');
 
@@ -75,12 +73,13 @@ const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ assignments }) => {
           ))}
         </TextField>
 
-        <Droppable droppableId="unassigned">
+        <Droppable droppableId="unassigned" key={`unassigned-${renderKey}`}>
           {(provided, snapshot) => (
             <List
               ref={provided.innerRef}
               {...provided.droppableProps}
               data-cy="unassigned-tasks-list"
+              data-testid="unassigned-tasks-droppable"
               sx={{
                 flexGrow: 1,
                 overflowY: 'auto',
@@ -89,6 +88,7 @@ const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ assignments }) => {
                 borderRadius: 1,
                 transition: 'background-color 0.2s ease',
                 p: 1, // Added padding to the list itself
+                border: snapshot.isDraggingOver ? '2px dashed #2196f3' : '1px solid transparent',
               }}
             >
               {filteredTasks.length === 0 && (
@@ -98,66 +98,63 @@ const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ assignments }) => {
               )}
               {filteredTasks.map((task, index) => (
                 <Draggable
-                  key={task.id}
+                  key={`draggable-${task.id}-${renderKey}`}
                   draggableId={task.id.toString()}
                   index={index}
                 >
                   {(provided, snapshot) => (
-                    <Tooltip
-                      title={
-                        <React.Fragment>
-                          <Typography color="inherit">{task.task_title}</Typography>
-                          <em>{`${task.start_time} - ${task.end_time}`}</em> <br />
-                          {task.notes && <Typography variant="caption">{task.notes}</Typography>}
-                        </React.Fragment>
-                      }
-                      placement="right"
-                      arrow
+                    <Box
+                      ref={provided.innerRef}
+                      {...provided.draggableProps}
+                      {...provided.dragHandleProps}
+                      data-testid={`unassigned-task-${task.id}`}
+                      sx={{
+                        mb: 1,
+                        bgcolor: snapshot.isDragging ? 'action.selected' : 'background.paper',
+                        border: `1px solid ${CATEGORY_COLORS[task.task_category] || '#ccc'}`,
+                        borderRadius: 1,
+                        boxShadow: snapshot.isDragging ? 3 : 1,
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          boxShadow: 3,
+                        },
+                        p: 2,
+                        cursor: 'grab',
+                        '&:active': {
+                          cursor: 'grabbing',
+                        },
+                        transform: snapshot.isDragging ? provided.draggableProps.style?.transform : 'none',
+                      }}
                     >
-                      <Box
-                        ref={provided.innerRef}
-                        {...provided.draggableProps}
-                        {...provided.dragHandleProps}
-                        sx={{
-                          mb: 1,
-                          bgcolor: snapshot.isDragging ? 'action.selected' : 'background.paper',
-                          border: `1px solid ${CATEGORY_COLORS[task.task_category] || '#ccc'}`,
-                          borderRadius: 1,
-                          boxShadow: snapshot.isDragging ? 3 : 1,
-                          transition: 'all 0.2s ease',
-                          '&:hover': {
-                            boxShadow: 3,
-                          },
-                          p: 2,
-                        }}
-                      >
-                        <ListItemText
-                          primary={task.task_title}
-                          secondary={
-                            <React.Fragment>
-                              <Typography
-                                sx={{ display: 'inline' }}
-                                component="span"
-                                variant="body2"
-                                color="text.primary"
-                              >
-                                {`${task.start_time} - ${task.end_time}`}
-                              </Typography>
-                              <br />
-                              <Chip
-                                label={task.task_category}
-                                size="small"
-                                sx={{
-                                  bgcolor: CATEGORY_COLORS[task.task_category] || '#ccc',
-                                  color: 'white',
-                                  mt: 0.5,
-                                }}
-                              />
-                            </React.Fragment>
-                          }
-                        />
-                                              </Box>
-                    </Tooltip>
+                      <Box>
+                        <Typography variant="body1" component="div" sx={{ fontWeight: 'medium' }}>
+                          {task.task_title}
+                        </Typography>
+                        <Typography variant="body2" color="text.primary" sx={{ mb: 1 }}>
+                          {`${task.start_time} - ${task.end_time}`}
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                          <Chip
+                            label={task.task_category}
+                            size="small"
+                            sx={{
+                              bgcolor: CATEGORY_COLORS[task.task_category] || '#ccc',
+                              color: 'white',
+                              fontSize: '0.75rem',
+                            }}
+                          />
+                          {task.is_flexible && (
+                            <Chip
+                              label="Flexible"
+                              size="small"
+                              color="secondary"
+                              variant="outlined"
+                              sx={{ fontSize: '0.75rem' }}
+                            />
+                          )}
+                        </Box>
+                      </Box>
+                    </Box>
                   )}
                 </Draggable>
               ))}

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { DragDropContext, DropResult } from 'react-beautiful-dnd';
+import React, { useState, useEffect, useMemo } from 'react';
+import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import { 
   Box, 
   Paper, 
@@ -15,6 +15,7 @@ import { TeacherAide } from '../types';
 import UnassignedTasks from './UnassignedTasks';
 import TimetableGrid from './TimetableGrid/TimetableGrid';
 import ConflictResolutionModal from './ConflictResolutionModal';
+import DurationModal from './DurationModal';
 
 interface AideScheduleViewProps {
   aide: TeacherAide;
@@ -23,6 +24,7 @@ interface AideScheduleViewProps {
   absences: any[];
   isLoading: boolean;
   onAssignmentUpdate: (assignment: Assignment) => Promise<void>;
+  weekStartDate?: Date; // Optional week start date for dynamic date calculation
 }
 
 // Helper function to get day name from date string
@@ -46,27 +48,49 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
   allUnassignedTasks,
   absences,
   isLoading,
-  onAssignmentUpdate
+  onAssignmentUpdate,
+  weekStartDate
 }) => {
   const [localAssignments, setLocalAssignments] = useState<Assignment[]>([]);
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const [conflictDetails, setConflictDetails] = useState<{
     conflictingAssignment: Assignment;
-    newAssignmentData: Partial<Assignment>;
+    newAssignmentData: Assignment;
     originalAssignment: Assignment;
   } | null>(null);
-
-  // Filter assignments for this specific aide and add day field
-  const aideAssignments = addDayToAssignments(
-    allAssignments.filter(a => a.aide_id === aide.id)
-  );
   
-  // Filter unassigned tasks (these can be assigned to any aide)
-  const unassignedTasks = allUnassignedTasks.filter(task => task.status === 'UNASSIGNED');
+  // Duration modal state for flexible tasks
+  const [durationModalOpen, setDurationModalOpen] = useState(false);
+  const [durationModalData, setDurationModalData] = useState<{
+    assignment: Assignment;
+    dropTime: string;
+    dropDay: string;
+    dropAideId: number;
+  } | null>(null);
+
+  // Force re-render key to ensure draggable elements are properly registered
+  const [renderKey, setRenderKey] = useState(0);
+
+  // Memoize assignments for this specific aide and add day field
+  const aideAssignments = useMemo(() => {
+    return addDayToAssignments(
+      allAssignments.filter(a => a.aide_id === aide.id)
+    );
+  }, [allAssignments, aide.id]);
+  
+  // Memoize unassigned tasks (these can be assigned to any aide)
+  const unassignedTasks = useMemo(() => {
+    return allUnassignedTasks.filter(task => task.status === 'UNASSIGNED');
+  }, [allUnassignedTasks]);
 
   useEffect(() => {
     setLocalAssignments(aideAssignments);
   }, [aideAssignments]);
+
+  // Force re-render when assignments change to ensure draggable registration
+  useEffect(() => {
+    setRenderKey(prev => prev + 1);
+  }, [allAssignments, allUnassignedTasks]);
 
   const handleDragEnd = async (result: DropResult) => {
     if (!result.destination) return;
@@ -114,6 +138,19 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
 
     // Case 1: Dragging from Unassigned Tasks to Timetable
     if (source.droppableId === 'unassigned') {
+      // Check if this is a flexible task
+      if (assignment.is_flexible) {
+        // Show duration modal for flexible tasks
+        setDurationModalData({
+          assignment,
+          dropTime: destTimeSlot,
+          dropDay: destDay,
+          dropAideId: destAideId,
+        });
+        setDurationModalOpen(true);
+        return;
+      }
+
       const updatedAssignment: Assignment = {
         ...assignment,
         ...commonUpdateData,
@@ -196,12 +233,12 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
     }
   };
 
-  const handleConflictResolution = async (resolution: 'replace' | 'cancel') => {
+  const handleConflictResolve = async (resolution: 'replace' | 'cancel') => {
     if (!conflictDetails) return;
 
     if (resolution === 'replace') {
       try {
-        await onAssignmentUpdate(conflictDetails.newAssignmentData as Assignment);
+        await onAssignmentUpdate(conflictDetails.newAssignmentData);
       } catch (error) {
         console.error('Error resolving conflict:', error);
       }
@@ -209,6 +246,38 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
 
     setConflictModalOpen(false);
     setConflictDetails(null);
+  };
+
+  const handleDurationConfirm = async (assignment: Assignment, duration: number) => {
+    try {
+      // Check for conflicts first
+      const conflictCheck = await fetch(`/api/assignments/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          aide_id: assignment.aide_id,
+          date: assignment.date,
+          start_time: assignment.start_time,
+          end_time: assignment.end_time,
+        }),
+      });
+      const conflictData = await conflictCheck.json();
+
+      if (conflictData.has_conflict) {
+        setConflictDetails({
+          conflictingAssignment: conflictData.conflicting_assignment,
+          newAssignmentData: assignment,
+          originalAssignment: assignment,
+        });
+        setConflictModalOpen(true);
+        return;
+      }
+
+      // No conflict, proceed with assignment
+      await onAssignmentUpdate(assignment);
+    } catch (error) {
+      console.error('Error assigning flexible task:', error);
+    }
   };
 
   if (isLoading) {
@@ -258,6 +327,8 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
               teacherAides={[aide]}
               isLoading={false}
               absences={absences}
+              renderKey={renderKey}
+              {...(weekStartDate && { weekStartDate })}
             />
           </Box>
 
@@ -269,7 +340,7 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Drag tasks here to assign them to {aide.name}
             </Typography>
-            <UnassignedTasks assignments={unassignedTasks} />
+            <UnassignedTasks assignments={unassignedTasks} renderKey={renderKey} />
           </Box>
         </Box>
       </Paper>
@@ -278,8 +349,18 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
       <ConflictResolutionModal
         open={conflictModalOpen}
         onClose={() => setConflictModalOpen(false)}
-        onResolve={handleConflictResolution}
+        onResolve={handleConflictResolve}
         conflictDetails={conflictDetails}
+      />
+      
+      <DurationModal
+        open={durationModalOpen}
+        onClose={() => setDurationModalOpen(false)}
+        onConfirm={handleDurationConfirm}
+        assignment={durationModalData?.assignment || null}
+        dropTime={durationModalData?.dropTime || ''}
+        dropDay={durationModalData?.dropDay || ''}
+        dropAideId={durationModalData?.dropAideId || 0}
       />
     </DragDropContext>
   );

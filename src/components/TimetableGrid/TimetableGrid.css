@@ -71,10 +71,15 @@
 }
 
 .time-slot {
-  height: 30px;
+  height: 40px;
   border-bottom: 1px solid #eee;
   position: relative;
   transition: background-color 0.2s;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
 .time-slot:hover {
@@ -83,6 +88,18 @@
 
 .time-slot.occupied {
   padding: 2px;
+}
+
+/* Drag and Drop Styles */
+.time-slot.dragging-over {
+  background-color: #e3f2fd !important;
+  border: 2px dashed #2196f3;
+  min-height: 40px;
+}
+
+.time-slot.dragging-over.occupied {
+  background-color: #ffebee !important;
+  border: 2px dashed #f44336;
 }
 
 .assignment {
@@ -94,6 +111,34 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: grab;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.assignment:active {
+  cursor: grabbing;
+}
+
+.assignment:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Dragging state */
+.assignment[data-rbd-draggable-context-id] {
+  cursor: grabbing;
+}
+
+/* Drop zone indicators */
+.time-slot:not(.occupied):hover {
+  background-color: #f0f8ff;
+  border: 1px dashed #2196f3;
+}
+
+.time-slot.occupied:hover {
+  background-color: #fff3e0;
+  border: 1px dashed #ff9800;
 }
 
 /* Tooltip styles */

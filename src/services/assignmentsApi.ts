@@ -34,13 +34,24 @@ export interface ConflictCheckResponse {
   conflictingAssignment?: Assignment;
 }
 
+// Backend response format for assignments
+interface AssignmentsResponse {
+  items: Assignment[];
+}
+
 // Assignment API functions
 export const assignmentsApi = {
   // Get all assignments
-  getAll: () => api.get<Assignment[]>('/assignments'),
+  getAll: async () => {
+    const response = await api.get<AssignmentsResponse>('/assignments');
+    return { data: response.items };
+  },
   
   // Get weekly assignments matrix
-  getWeeklyMatrix: (week: string) => api.get<Assignment[]>(`/assignments?week=${week}`),
+  getWeeklyMatrix: async (week: string) => {
+    const response = await api.get<AssignmentsResponse>(`/assignments?week=${week}`);
+    return { data: response.items };
+  },
   
   // Get assignment by ID
   getById: (id: number) => api.get<Assignment>(`/assignments/${id}`),
@@ -62,14 +73,21 @@ export const assignmentsApi = {
     api.post<ConflictCheckResponse>('/assignments/check', data),
   
   // Get assignments by aide
-  getByAide: (aideId: number, week?: string) => {
+  getByAide: async (aideId: number, week?: string) => {
     const params = week ? `?week=${week}` : '';
-    return api.get<Assignment[]>(`/assignments/aide/${aideId}${params}`);
+    const response = await api.get<AssignmentsResponse>(`/assignments/aide/${aideId}${params}`);
+    return { data: response.items };
   },
   
   // Get assignments by task
-  getByTask: (taskId: number) => api.get<Assignment[]>(`/assignments/task/${taskId}`),
+  getByTask: async (taskId: number) => {
+    const response = await api.get<AssignmentsResponse>(`/assignments/task/${taskId}`);
+    return { data: response.items };
+  },
   
   // Get assignments by day
-  getByDay: (day: string) => api.get<Assignment[]>(`/assignments/day/${day}`),
+  getByDay: async (day: string) => {
+    const response = await api.get<AssignmentsResponse>(`/assignments/day/${day}`);
+    return { data: response.items };
+  },
 };

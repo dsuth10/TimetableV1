@@ -108,7 +108,8 @@ class TaskListResource(Resource):
                 classroom_id=data.get('classroom_id'),
                 school_class_id=school_class_id,
                 notes=data.get('notes'),
-                status=data.get('status', 'ACTIVE')
+                status=data.get('status', 'ACTIVE'),
+                is_flexible=data.get('is_flexible', False)
             )
             
             session.add(task)
@@ -198,6 +199,8 @@ class TaskResource(Resource):
                 task.notes = data['notes']
             if 'status' in data:
                 task.status = data['status']
+            if 'is_flexible' in data:
+                task.is_flexible = bool(data['is_flexible'])
             
             # Update future assignments if this is a recurring task and relevant fields changed
             assignments_updated = 0

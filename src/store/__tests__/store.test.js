@@ -1,5 +1,7 @@
-import { renderHook, act } from '@testing-library/react-hooks';
+import React from 'react';
+import { renderHook, act } from '@testing-library/react';
 import { Provider } from 'react-redux';
+import { vi } from 'vitest';
 import { store } from '../index';
 import { fetchAides } from '../slices/aidesSlice';
 import { fetchTasks } from '../slices/tasksSlice';
@@ -22,23 +24,25 @@ const mockAssignments = [
 ];
 
 // Mock axios
-jest.mock('axios', () => ({
-  get: jest.fn((url) => {
-    if (url.includes('/teacher-aides')) {
-      return Promise.resolve({ data: mockAides });
-    }
-    if (url.includes('/tasks')) {
-      return Promise.resolve({ data: mockTasks });
-    }
-    if (url.includes('/assignments')) {
-      return Promise.resolve({ data: mockAssignments });
-    }
-    return Promise.reject(new Error('Not found'));
-  })
+vi.mock('axios', () => ({
+  default: {
+    get: vi.fn((url) => {
+      if (url.includes('/teacher-aides')) {
+        return Promise.resolve({ data: mockAides });
+      }
+      if (url.includes('/tasks')) {
+        return Promise.resolve({ data: mockTasks });
+      }
+      if (url.includes('/assignments')) {
+        return Promise.resolve({ data: mockAssignments });
+      }
+      return Promise.reject(new Error('Not found'));
+    })
+  }
 }));
 
 describe('Redux Store', () => {
-  const wrapper = ({ children }) => (
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
     <Provider store={store}>{children}</Provider>
   );
 
@@ -87,7 +91,8 @@ describe('Redux Store', () => {
   describe('Error Handling', () => {
     it('handles API errors correctly', async () => {
       // Mock axios to reject
-      jest.spyOn(require('axios'), 'get').mockRejectedValueOnce(new Error('API Error'));
+      const axios = await import('axios');
+      vi.spyOn(axios.default, 'get').mockRejectedValueOnce(new Error('API Error'));
       
       const { result } = renderHook(() => store.getState().aides, { wrapper });
       

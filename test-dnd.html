@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drag and Drop Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .drag-area {
+            width: 200px;
+            min-height: 200px;
+            padding: 10px;
+            background-color: white;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+        }
+        .drag-area.dragging-over {
+            background-color: #e3f2fd;
+            border-color: #2196f3;
+        }
+        .drag-item {
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: grab;
+            user-select: none;
+        }
+        .drag-item:active {
+            cursor: grabbing;
+        }
+        .drag-item.dragging {
+            background-color: #e3f2fd;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .drop-zone {
+            width: 200px;
+            min-height: 200px;
+            padding: 10px;
+            background-color: #f8f8f8;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: #666;
+        }
+        .drop-zone.dragging-over {
+            background-color: #e3f2fd;
+            border-color: #2196f3;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .instructions {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>Drag and Drop Test</h1>
+    <div class="instructions">
+        <p>Try dragging the items from the left to the drop zone on the right.</p>
+        <p>This tests basic HTML5 drag and drop functionality.</p>
+    </div>
+    
+    <div class="container">
+        <div class="drag-area" id="source">
+            <h3>Draggable Items</h3>
+            <div class="drag-item" draggable="true" data-id="1">Task 1</div>
+            <div class="drag-item" draggable="true" data-id="2">Task 2</div>
+            <div class="drag-item" draggable="true" data-id="3">Task 3</div>
+        </div>
+        
+        <div class="drop-zone" id="destination">
+            <div>Drop Zone<br>Drop items here</div>
+        </div>
+    </div>
+
+    <script>
+        // Basic HTML5 drag and drop test
+        const dragItems = document.querySelectorAll('.drag-item');
+        const dropZone = document.getElementById('destination');
+        const sourceArea = document.getElementById('source');
+
+        // Add drag event listeners to draggable items
+        dragItems.forEach(item => {
+            item.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', item.dataset.id);
+                item.classList.add('dragging');
+                console.log('🎯 Drag started:', item.dataset.id);
+            });
+
+            item.addEventListener('dragend', (e) => {
+                item.classList.remove('dragging');
+                console.log('🎯 Drag ended');
+            });
+        });
+
+        // Add drop zone event listeners
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragging-over');
+            dropZone.innerHTML = '<div>Drop here!</div>';
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            dropZone.classList.remove('dragging-over');
+            dropZone.innerHTML = '<div>Drop Zone<br>Drop items here</div>';
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const itemId = e.dataTransfer.getData('text/plain');
+            dropZone.classList.remove('dragging-over');
+            
+            console.log('✅ Drop successful! Item ID:', itemId);
+            alert(`Drop successful!\nItem ID: ${itemId}\nFrom: source\nTo: destination`);
+            
+            // Reset drop zone
+            dropZone.innerHTML = '<div>Drop Zone<br>Drop items here</div>';
+        });
+
+        // Add source area event listeners for visual feedback
+        sourceArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            sourceArea.classList.add('dragging-over');
+        });
+
+        sourceArea.addEventListener('dragleave', (e) => {
+            sourceArea.classList.remove('dragging-over');
+        });
+
+        console.log('🚀 Basic drag and drop test loaded');
+    </script>
+</body>
+</html>
+

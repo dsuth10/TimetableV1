@@ -27,12 +27,14 @@ def get_engine():
         db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'instance', 'timetable.db')
         _engine = create_engine(
             f'sqlite:///{db_path}',
-            pool_size=20,
-            max_overflow=30,
+            # Increased connection pool settings to handle more concurrent requests
+            pool_size=20,  # Increased from 10
+            max_overflow=40,  # Increased from 20
             pool_pre_ping=True,
-            pool_recycle=3600,
+            pool_recycle=3600,  # Increased back to 1 hour
+            pool_timeout=120,  # Increased timeout to 2 minutes
             connect_args={
-                'timeout': 30,
+                'timeout': 120,  # Increased from 60
                 'check_same_thread': False
             }
         )

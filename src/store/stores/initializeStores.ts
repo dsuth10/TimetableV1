@@ -121,7 +121,9 @@ const loadInitialAbsences = async () => {
     const currentWeek = useUIStore.getState().currentWeek;
     const response = await fetch(`/api/absences?week=${currentWeek}`);
     if (response.ok) {
-      const absences = await response.json();
+      const data = await response.json();
+      // Handle both paginated response (items) and week-filtered response (absences)
+      const absences = data.items || data.absences || data;
       // Safety check: ensure absences is an array
       if (Array.isArray(absences)) {
         useAbsencesStore.getState().setAbsences(absences);
@@ -237,7 +239,9 @@ const loadAbsencesForWeek = async (week: string) => {
   try {
     const response = await fetch(`/api/absences?week=${week}`);
     if (response.ok) {
-      const absences = await response.json();
+      const data = await response.json();
+      // Handle both paginated response (items) and week-filtered response (absences)
+      const absences = data.items || data.absences || data;
       // Safety check: ensure absences is an array
       if (Array.isArray(absences)) {
         useAbsencesStore.getState().setAbsences(absences);

@@ -8,6 +8,7 @@ export interface Assignment {
   status: 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETE';
   task_title: string;
   task_category: string;
+  is_flexible?: boolean; // Whether the task is flexible (can have duration set when dropped)
   notes?: string;
   created_at?: string;
   updated_at?: string;

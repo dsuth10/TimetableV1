@@ -23,7 +23,10 @@ export interface UpdateAvailabilityRequest extends Partial<CreateAvailabilityReq
 // Aide API functions
 export const aidesApi = {
   // Get all aides
-  getAll: () => api.get<TeacherAide[]>('/teacher-aides'),
+  getAll: async () => {
+    const response = await api.get<TeacherAide[]>('/teacher-aides');
+    return { data: response };
+  },
   
   // Get aide by ID
   getById: (id: number) => api.get<TeacherAide>(`/teacher-aides/${id}`),

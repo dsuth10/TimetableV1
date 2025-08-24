@@ -36,6 +36,7 @@ def serialize_task(task):
         'school_class': serialize_school_class(task.school_class) if task.school_class else None, # Add serialized school_class
         'notes': task.notes,
         'status': task.status,
+        'is_flexible': task.is_flexible,
         'created_at': task.created_at.isoformat() if task.created_at else None,
         'updated_at': task.updated_at.isoformat() if task.updated_at else None
     }
@@ -46,10 +47,12 @@ def serialize_assignment(assignment, task=None):
     task_title = None
     task_category = None
     task_notes = None
+    is_flexible = False
     if task:
         task_title = task.title
         task_category = task.category
         task_notes = task.notes
+        is_flexible = task.is_flexible
     else:
         # Otherwise, try to load from assignment.task relationship
         try:
@@ -57,6 +60,7 @@ def serialize_assignment(assignment, task=None):
                 task_title = assignment.task.title
                 task_category = assignment.task.category
                 task_notes = assignment.task.notes
+                is_flexible = assignment.task.is_flexible
         except (DetachedInstanceError, AttributeError):
             pass # Task not loaded or detached
 
@@ -79,6 +83,7 @@ def serialize_assignment(assignment, task=None):
         'status': assignment.status,
         'task_title': task_title,
         'task_category': task_category,
+        'is_flexible': is_flexible,
         'notes': task_notes,
         'created_at': created_at,
         'updated_at': updated_at

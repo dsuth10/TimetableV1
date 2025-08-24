@@ -11,7 +11,7 @@ import {
   Select,
   MenuItem
 } from '@mui/material';
-import api from '../services/api';
+import { api } from '../services/api';
 
 function SchoolClassForm({ onClassAdded }) {
   const [formData, setFormData] = useState({
