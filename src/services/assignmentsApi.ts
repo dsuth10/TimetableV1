@@ -43,14 +43,28 @@ interface AssignmentsResponse {
 export const assignmentsApi = {
   // Get all assignments
   getAll: async () => {
-    const response = await api.get<AssignmentsResponse>('/assignments');
-    return { data: response.items };
+    const response = await api.get<any>('/assignments');
+    const items = Array.isArray(response)
+      ? response
+      : Array.isArray(response?.items)
+        ? response.items
+        : Array.isArray(response?.data)
+          ? response.data
+          : [];
+    return { data: items as Assignment[] };
   },
   
   // Get weekly assignments matrix
   getWeeklyMatrix: async (week: string) => {
-    const response = await api.get<AssignmentsResponse>(`/assignments?week=${week}`);
-    return { data: response.items };
+    const response = await api.get<any>(`/assignments?week=${week}`);
+    const items = Array.isArray(response)
+      ? response
+      : Array.isArray(response?.items)
+        ? response.items
+        : Array.isArray(response?.data)
+          ? response.data
+          : [];
+    return { data: items as Assignment[] };
   },
   
   // Get assignment by ID

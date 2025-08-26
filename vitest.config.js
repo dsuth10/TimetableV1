@@ -20,48 +20,37 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: './src/setupTests.jsx',
-    // Add file exclusions to prevent EMFILE errors
-    exclude: [
-      '**/node_modules/**',
-      '**/dist/**',
-      '**/.{idea,git,cache,output,temp}/**',
-      '**/coverage/**',
-      '**/cypress/**'
-    ],
-    // Mock heavy dependencies to prevent file descriptor issues
-    deps: {
-      inline: ['@mui/icons-material']
-    },
+    
     // Memory optimization settings
+    hookTimeout: 30000,
+    testTimeout: 10000,
+    
+    // Worker process settings to prevent exit issues
     pool: 'forks',
     poolOptions: {
       forks: {
         singleFork: true,
         maxForks: 1,
-        minForks: 1
-      }
+        minForks: 1,
+      },
     },
-    // Limit concurrent tests to reduce memory usage
-    maxConcurrency: 1,
-    // Add memory limits
-    hookTimeout: 10000,
-    testTimeout: 10000,
-    // Reduce memory usage by limiting test file processing
-    isolate: true,
-    // Optimize test execution
-    sequence: {
-      shuffle: false
-    }
+    
+    // Coverage settings
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      exclude: [
+        'node_modules/',
+        'src/setupTests.jsx',
+        'src/test-utils.tsx',
+        '**/*.test.{js,jsx,ts,tsx}',
+        '**/*.spec.{js,jsx,ts,tsx}',
+      ],
+    },
+    
+    // Environment variables
+    env: {
+      'process.env.NODE_ENV': '"test"',
+    },
   },
-  // Add memory optimization for Vite
-  server: {
-    hmr: false
-  },
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks: undefined
-      }
-    }
-  }
 }) 

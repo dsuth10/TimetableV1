@@ -1,5 +1,5 @@
 import React from 'react';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 import { render } from '../../test-utils';
@@ -132,7 +132,7 @@ describe('Schedule Component', () => {
     } as MockUseAbsences);
   });
 
-  it('renders loading state correctly', () => {
+  it('renders loading state correctly', async () => {
     (useAssignments as unknown as { mockReturnValue: (v: any) => void }).mockReturnValue({
       assignments: [],
       isLoading: true,
@@ -149,12 +149,30 @@ describe('Schedule Component', () => {
       isLoading: true
     } as MockUseAbsences);
 
-    render(<Schedule />);
+    await act(async () => {
+      render(<Schedule />, {
+        useMemoryRouter: true,
+        initialEntries: ['/schedule'],
+        initialSearchParams: { aideId: '1' }
+      });
+    });
+    
     expect(screen.getByText('Loading...')).toBeInTheDocument();
   });
 
-  it('renders teacher aide schedules and unassigned tasks', () => {
-    render(<Schedule />);
+  it('renders teacher aide schedules and unassigned tasks', async () => {
+    await act(async () => {
+      render(<Schedule />, {
+        useMemoryRouter: true,
+        initialEntries: ['/schedule'],
+        initialSearchParams: { aideId: '1' }
+      });
+    });
+    
+    // Wait for component to finish loading
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
     
     // Check for teacher aide name in aria-label
     const aideSlots = screen.getAllByLabelText(/Empty slot for John Doe at/);
@@ -175,7 +193,18 @@ describe('Schedule Component', () => {
       updateAssignment: mockUpdateAssignment
     } as MockUseAssignments);
 
-    render(<Schedule />);
+    await act(async () => {
+      render(<Schedule />, {
+        useMemoryRouter: true,
+        initialEntries: ['/schedule'],
+        initialSearchParams: { aideId: '1' }
+      });
+    });
+
+    // Wait for component to finish loading
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
 
     // Check that the unassigned task is visible
     expect(screen.getByText('Math Support')).toBeInTheDocument();
@@ -209,7 +238,18 @@ describe('Schedule Component', () => {
       updateAssignment: mockUpdateAssignment
     } as MockUseAssignments);
 
-    render(<Schedule />);
+    await act(async () => {
+      render(<Schedule />, {
+        useMemoryRouter: true,
+        initialEntries: ['/schedule'],
+        initialSearchParams: { aideId: '1' }
+      });
+    });
+
+    // Wait for component to finish loading
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
 
     // Check that both assignments are visible in the schedule
     expect(screen.getByText('Reading Help')).toBeInTheDocument();
@@ -230,7 +270,18 @@ describe('Schedule Component', () => {
       updateAssignment: mockUpdateAssignment
     } as MockUseAssignments);
 
-    render(<Schedule />);
+    await act(async () => {
+      render(<Schedule />, {
+        useMemoryRouter: true,
+        initialEntries: ['/schedule'],
+        initialSearchParams: { aideId: '1' }
+      });
+    });
+
+    // Wait for component to finish loading
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
 
     // Check that the assigned task is visible in the schedule
     expect(screen.getByText('Reading Help')).toBeInTheDocument();
@@ -250,7 +301,18 @@ describe('Schedule Component', () => {
       updateAssignment: mockUpdateAssignment
     } as MockUseAssignments);
 
-    render(<Schedule />);
+    await act(async () => {
+      render(<Schedule />, {
+        useMemoryRouter: true,
+        initialEntries: ['/schedule'],
+        initialSearchParams: { aideId: '1' }
+      });
+    });
+
+    // Wait for component to finish loading
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+    });
 
     // Check that the unassigned task is visible
     expect(screen.getByText('Math Support')).toBeInTheDocument();

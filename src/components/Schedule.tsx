@@ -143,15 +143,12 @@ const Schedule: React.FC = () => {
         return;
       }
       console.log('Dropping to unassigned tasks');
+      // Unassign while preserving original date/time to satisfy backend validation
       const updatedAssignment = {
         ...assignment,
         aide_id: null,
         status: 'UNASSIGNED' as const,
-        date: undefined,
-        day: undefined,
-        start_time: undefined,
-        end_time: undefined,
-      } as unknown as Assignment;
+      } as Assignment;
 
       try {
         setLocalAssignments((prevAssignments) => {
@@ -228,7 +225,37 @@ const Schedule: React.FC = () => {
                 end_time: endTimeString,
               }),
             });
-            if (!res.ok) throw new Error('Failed to create assignment');
+            if (!res.ok) {
+              // If conflict (409), open modal using backend-provided payload
+              if (res.status === 409) {
+                const errBody = await res.json().catch(() => ({} as any));
+                const conflict = (errBody && (errBody.conflict || errBody.conflicting_assignment)) || null;
+                if (conflict) {
+                  setConflictDetails({
+                    conflictingAssignment: conflict as unknown as Assignment,
+                    newAssignmentData: {
+                      task_id: newAssignmentPayload.taskId as unknown as number,
+                      aide_id: newAssignmentPayload.aideId,
+                      date: targetDate.toISOString().split('T')[0],
+                      start_time: destTimeSlot,
+                      end_time: endTimeString,
+                      status: 'ASSIGNED',
+                    } as unknown as Partial<Assignment>,
+                    originalAssignment: {
+                      id: -1,
+                      task_id: newAssignmentPayload.taskId as unknown as number,
+                      aide_id: null,
+                      date: '',
+                      start_time: '',
+                      end_time: '',
+                      status: 'UNASSIGNED',
+                    } as unknown as Assignment,
+                  });
+                  setConflictModalOpen(true);
+                }
+              }
+              throw new Error('Failed to create assignment');
+            }
             return res.json();
           })();
 
@@ -262,13 +289,28 @@ const Schedule: React.FC = () => {
 
           await updateAssignment(assignment.id, updatedAssignment);
           console.log('Successfully updated assignment');
-        } catch (error) {
+        } catch (error: any) {
           console.error('Failed to update assignment:', error);
           // Revert local state on error
           setLocalAssignments((prevAssignments) => {
             const filtered = prevAssignments.filter((a) => a.id !== updatedAssignment.id);
             return [...filtered, assignment];
           });
+
+          // If conflict (409), open modal with details
+          const status = error?.response?.status;
+          const data = error?.response?.data;
+          if (status === 409 && data) {
+            const conflict = data.conflict || data.conflicting_assignment || null;
+            if (conflict) {
+              setConflictDetails({
+                conflictingAssignment: conflict as Assignment,
+                newAssignmentData: updatedAssignment,
+                originalAssignment: assignment,
+              });
+              setConflictModalOpen(true);
+            }
+          }
         }
       }
     }
@@ -281,32 +323,54 @@ const Schedule: React.FC = () => {
 
     if (action === 'replace') {
       try {
-        // Step 1: Unassign the conflicting assignment
-        const unassignedConflicting = { ...conflictingAssignment, aide_id: null, status: 'UNASSIGNED' as const, date: undefined, day: undefined, start_time: undefined, end_time: undefined } as unknown as Assignment;
+        // Step 1: Unassign the conflicting assignment (preserve its date/time)
+        const unassignedConflicting = { ...conflictingAssignment, aide_id: null, status: 'UNASSIGNED' as const } as Assignment;
         await updateAssignment(conflictingAssignment.id, unassignedConflicting);
 
-        // Step 2: Assign the new assignment
-        const assignedNew = { ...newAssignmentData, status: 'ASSIGNED' } as Assignment;
-        await updateAssignment(assignedNew.id as number, assignedNew);
+        // Step 2: Apply the desired new assignment
+        if (newAssignmentData && (newAssignmentData as any).id) {
+          // It was an update of an existing assignment
+          const assignedNew = { ...newAssignmentData, status: 'ASSIGNED' } as Assignment;
+          await updateAssignment((newAssignmentData as any).id as number, assignedNew);
 
-        // Update local state to reflect both changes
-        setLocalAssignments(prevAssignments => {
-          const filtered = prevAssignments.filter(a => a.id !== conflictingAssignment.id && a.id !== assignedNew.id);
-          return [...filtered, unassignedConflicting, assignedNew];
-        });
+          setLocalAssignments(prevAssignments => {
+            const filtered = prevAssignments.filter(a => a.id !== conflictingAssignment.id && a.id !== (newAssignmentData as any).id);
+            return [...filtered, unassignedConflicting, assignedNew];
+          });
+        } else {
+          // It was a creation from a Task; create after unassigning the conflict
+          const res = await fetch('/api/assignments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              task_id: (newAssignmentData as any).task_id,
+              aide_id: (newAssignmentData as any).aide_id,
+              date: (newAssignmentData as any).date,
+              start_time: (newAssignmentData as any).start_time,
+              end_time: (newAssignmentData as any).end_time,
+            }),
+          });
+          if (!res.ok) throw new Error('Failed to create assignment after replace');
+          const created = (await res.json()) as Assignment;
+
+          setLocalAssignments(prevAssignments => {
+            const filtered = prevAssignments.filter(a => a.id !== conflictingAssignment.id);
+            return [...filtered, unassignedConflicting, created];
+          });
+        }
 
       } catch (error) {
         console.error('Failed to resolve conflict by replacing:', error);
         // Revert local state if API update fails for replacement
         setLocalAssignments(prevAssignments => {
-          const filtered = prevAssignments.filter(a => a.id !== conflictingAssignment.id && a.id !== (newAssignmentData.id || -1));
+          const filtered = prevAssignments.filter(a => a.id !== conflictingAssignment.id && a.id !== ((newAssignmentData as any).id || -1));
           return [...filtered, conflictingAssignment, originalAssignment]; // Revert both
         });
       }
     } else { // action === 'cancel'
       // Revert local state to original (no change)
       setLocalAssignments(prevAssignments => {
-        const filtered = prevAssignments.filter(a => a.id !== (newAssignmentData.id || -1)); // Remove the temp new assignment if it was optimistically added
+        const filtered = prevAssignments.filter(a => a.id !== ((newAssignmentData as any).id || -1)); // Remove the temp new assignment if it was optimistically added
         return [...filtered, originalAssignment]; // Add back original if it was removed
       });
     }

@@ -41,11 +41,14 @@ class ApiClient {
         // Add loading state
         useUIStore.getState().setGlobalLoading(true);
         
-        // Add timestamp for caching
-        config.params = {
-          ...config.params,
-          _t: Date.now(),
-        };
+        // Add timestamp for caching unless running under Cypress (to allow intercepts to match)
+        const isCypress = typeof window !== 'undefined' && (window as any).Cypress;
+        if (!isCypress) {
+          config.params = {
+            ...config.params,
+            _t: Date.now(),
+          };
+        }
         
         return config;
       },

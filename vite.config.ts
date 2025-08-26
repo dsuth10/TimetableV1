@@ -28,6 +28,18 @@ export default defineConfig({
     port: 3001,
     open: true,
   },
+  preview: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+      },
+    },
+    port: 4173,
+    open: false,
+  },
   build: {
     outDir: 'dist',
     assetsDir: 'assets',

@@ -24,8 +24,15 @@ export const absencesApi = {
   // Get all absences with optional week filter
   getAll: async (week?: string) => {
     const params = week ? `?week=${week}` : '';
-    const response = await api.get<AbsencesResponse>(`/absences${params}`);
-    return { data: response.items };
+    const response = await api.get<any>(`/absences${params}`);
+    const items = Array.isArray(response)
+      ? response
+      : Array.isArray(response?.items)
+        ? response.items
+        : Array.isArray(response?.data)
+          ? response.data
+          : [];
+    return { data: items as Absence[] };
   },
   
   // Get absence by ID
@@ -42,13 +49,27 @@ export const absencesApi = {
   
   // Get absences by aide
   getByAide: async (aideId: number) => {
-    const response = await api.get<AbsencesResponse>(`/absences/aide/${aideId}`);
-    return { data: response.items };
+    const response = await api.get<any>(`/absences/aide/${aideId}`);
+    const items = Array.isArray(response)
+      ? response
+      : Array.isArray(response?.items)
+        ? response.items
+        : Array.isArray(response?.data)
+          ? response.data
+          : [];
+    return { data: items as Absence[] };
   },
   
   // Get absences by date range
   getByDateRange: async (startDate: string, endDate: string) => {
-    const response = await api.get<AbsencesResponse>(`/absences?start_date=${startDate}&end_date=${endDate}`);
-    return { data: response.items };
+    const response = await api.get<any>(`/absences?start_date=${startDate}&end_date=${endDate}`);
+    const items = Array.isArray(response)
+      ? response
+      : Array.isArray(response?.items)
+        ? response.items
+        : Array.isArray(response?.data)
+          ? response.data
+          : [];
+    return { data: items as Absence[] };
   },
 };

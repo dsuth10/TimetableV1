@@ -386,17 +386,36 @@ def test_check_conflicts_detached_instance(client, db_session):
     assert "conflicting_assignment" not in data 
 
 def test_weekly_matrix_endpoint(client, db_session):
-    """Test the weekly matrix endpoint returns correct structure for UI."""
-    classroom, task, aide = create_test_data(db_session)
+    """Test weekly matrix endpoint."""
+    # Create test data
+    task = Task(
+        title="Test Task",
+        category="ACADEMIC",
+        start_time=time(9, 0),  # Required field
+        end_time=time(10, 0),   # Required field
+        is_flexible=False
+    )
+    db_session.add(task)
+    db_session.commit()
     
-    # Create a second aide for testing
+    aide = TeacherAide(
+        name="Test Aide",
+        qualifications="Test Qualifications",
+        colour_hex="#FF0000"  # Required field
+    )
+    db_session.add(aide)
+    
     aide2 = TeacherAide(
         name="Test Aide 2",
         qualifications="Test Qualifications 2",
-        colour_hex="#00FF00"
+        colour_hex="#00FF00"  # Required field
     )
     db_session.add(aide2)
     db_session.commit()
+    
+    # Get aide IDs before creating assignments to avoid DetachedInstanceError
+    aide_id = aide.id
+    aide2_id = aide2.id
     
     # Create assignments for the current week
     today = date.today()
@@ -406,7 +425,7 @@ def test_weekly_matrix_endpoint(client, db_session):
     assignments = [
         Assignment(
             task_id=task.id,
-            aide_id=aide.id,
+            aide_id=aide_id,
             date=start_of_week,  # Monday
             start_time=time(9, 0),
             end_time=time(10, 0),
@@ -414,7 +433,7 @@ def test_weekly_matrix_endpoint(client, db_session):
         ),
         Assignment(
             task_id=task.id,
-            aide_id=aide2.id,
+            aide_id=aide2_id,
             date=start_of_week + timedelta(days=2),  # Wednesday
             start_time=time(14, 0),
             end_time=time(15, 0),
@@ -466,7 +485,7 @@ def test_weekly_matrix_endpoint(client, db_session):
     assert len(data["assignments"]) > 0
     
     # Check for Monday assignment (aide 1)
-    monday_key = f"{aide.id}_Monday_09:00"
+    monday_key = f"{aide_id}_Monday_09:00"
     assert monday_key in data["assignments"]
     monday_assignment = data["assignments"][monday_key]
     assert monday_assignment["task_title"] == "Test Task"
@@ -475,7 +494,7 @@ def test_weekly_matrix_endpoint(client, db_session):
     assert monday_assignment["status"] == "ASSIGNED"
     
     # Check for Wednesday assignment (aide 2)
-    wednesday_key = f"{aide2.id}_Wednesday_14:00"
+    wednesday_key = f"{aide2_id}_Wednesday_14:00"
     assert wednesday_key in data["assignments"]
     wednesday_assignment = data["assignments"][wednesday_key]
     assert wednesday_assignment["task_title"] == "Test Task"

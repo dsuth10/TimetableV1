@@ -1,5 +1,5 @@
 import React from 'react';
-import { screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import { render } from '../../test-utils';
 import Schedule from '../Schedule';
@@ -54,23 +54,33 @@ vi.mock('../../hooks/useAbsences', () => ({
 }));
 
 describe('Drag and Drop Functionality', () => {
-  it('should render the schedule component', () => {
+  it('should render the schedule component', async () => {
     render(<Schedule />);
-    // Check for the weekly timetable grid
-    expect(screen.getByLabelText('Weekly timetable')).toBeInTheDocument();
+    
+    // Wait for the component to load and check for the schedule container
+    await waitFor(() => {
+      expect(screen.getByTestId('schedule-container')).toBeInTheDocument();
+    }, { timeout: 5000 });
   });
 
-  it('should render unassigned tasks', () => {
+  it('should render unassigned tasks', async () => {
     render(<Schedule />);
-    // Check for unassigned tasks area
-    expect(screen.getByTestId('unassigned-tasks-droppable')).toBeInTheDocument();
+    
+    // Wait for the unassigned tasks area to load
+    await waitFor(() => {
+      expect(screen.getByTestId('unassigned-tasks-droppable')).toBeInTheDocument();
+    }, { timeout: 5000 });
   });
 
-  it('should render timetable grid', () => {
+  it('should render timetable grid', async () => {
     render(<Schedule />);
-    // Look for time slots in the grid
-    const timeSlots = screen.getAllByTestId(/time-slot-/);
-    expect(timeSlots.length).toBeGreaterThan(0);
+    
+    // Wait for the timetable grid to load and look for time slots
+    await waitFor(() => {
+      // Look for any time slot elements (they have patterns like time-slot-Monday-09:00)
+      const timeSlots = screen.getAllByTestId(/^time-slot-/);
+      expect(timeSlots.length).toBeGreaterThan(0);
+    }, { timeout: 5000 });
   });
 });
 

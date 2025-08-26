@@ -49,6 +49,7 @@ function App() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={<Schedule />} />
+              <Route path="/schedule" element={<Schedule />} />
               <Route path="/test" element={<SimpleDragTest />} />
               <Route path="/test-data" element={<DragTestWithData />} />
               <Route path="/quick-test" element={<QuickDragTest />} />
