@@ -1,7 +1,8 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
+import { render } from '../../test-utils';
 import Schedule from '../Schedule';
 import { useAssignments } from '../../hooks/useAssignments';
 import { useTeacherAides } from '../../hooks/useTeacherAides';
@@ -11,6 +12,13 @@ import { useAbsences } from '../../hooks/useAbsences';
 vi.mock('../../hooks/useAssignments');
 vi.mock('../../hooks/useTeacherAides');
 vi.mock('../../hooks/useAbsences');
+
+// Mock the tasksApi to prevent API calls
+vi.mock('../../services/tasksApi', () => ({
+  tasksApi: {
+    getUnassigned: vi.fn().mockResolvedValue({ tasks: [] })
+  }
+}));
 
 // Type declarations for mocks
 type MockUseAssignments = {
@@ -142,7 +150,7 @@ describe('Schedule Component', () => {
     } as MockUseAbsences);
 
     render(<Schedule />);
-    expect(screen.getByTestId('loading-spinner')).toBeInTheDocument();
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
   });
 
   it('renders teacher aide schedules and unassigned tasks', () => {

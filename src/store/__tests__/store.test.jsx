@@ -23,26 +23,28 @@ const mockAssignments = [
   { id: 2, task_id: 2, aide_id: 2, date: '2024-03-20' }
 ];
 
-// Mock axios
+// Mock axios with create function
 vi.mock('axios', () => ({
   default: {
-    get: vi.fn((url) => {
-      if (url.includes('/teacher-aides')) {
-        return Promise.resolve({ data: mockAides });
-      }
-      if (url.includes('/tasks')) {
-        return Promise.resolve({ data: mockTasks });
-      }
-      if (url.includes('/assignments')) {
-        return Promise.resolve({ data: mockAssignments });
-      }
-      return Promise.reject(new Error('Not found'));
-    })
+    create: vi.fn(() => ({
+      get: vi.fn((url) => {
+        if (url.includes('/teacher-aides')) {
+          return Promise.resolve({ data: mockAides });
+        }
+        if (url.includes('/tasks')) {
+          return Promise.resolve({ data: mockTasks });
+        }
+        if (url.includes('/assignments')) {
+          return Promise.resolve({ data: mockAssignments });
+        }
+        return Promise.reject(new Error('Not found'));
+      })
+    }))
   }
 }));
 
 describe('Redux Store', () => {
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
+  const wrapper = ({ children }) => (
     <Provider store={store}>{children}</Provider>
   );
 
@@ -105,4 +107,4 @@ describe('Redux Store', () => {
       expect(result.current.items).toEqual([]);
     });
   });
-}); 
+});

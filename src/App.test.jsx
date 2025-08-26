@@ -1,14 +1,15 @@
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
+import { render } from './test-utils';
 import App from './App';
-import { BrowserRouter } from 'react-router-dom';
 
 describe('App', () => {
-  it('renders welcome message', () => {
-    render(
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    );
-    expect(screen.getByText(/welcome to timetable app/i)).toBeInTheDocument();
+  it('renders the main application', () => {
+    render(<App />);
+    
+    // Check that the app title is rendered (from Layout component)
+    expect(screen.getByText('Timetable App')).toBeInTheDocument();
+    
+    // Check that the Schedule component is rendered (default route)
+    expect(screen.getByText('Loading timetable...')).toBeInTheDocument();
   });
 }); 

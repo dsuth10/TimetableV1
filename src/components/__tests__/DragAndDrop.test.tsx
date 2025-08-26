@@ -1,6 +1,7 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import { vi } from 'vitest';
+import { render } from '../../test-utils';
 import Schedule from '../Schedule';
 
 // Mock the hooks
@@ -55,18 +56,21 @@ vi.mock('../../hooks/useAbsences', () => ({
 describe('Drag and Drop Functionality', () => {
   it('should render the schedule component', () => {
     render(<Schedule />);
-    expect(screen.getByTestId('schedule-container')).toBeInTheDocument();
+    // Check for the weekly timetable grid
+    expect(screen.getByLabelText('Weekly timetable')).toBeInTheDocument();
   });
 
   it('should render unassigned tasks', () => {
     render(<Schedule />);
+    // Check for unassigned tasks area
     expect(screen.getByTestId('unassigned-tasks-droppable')).toBeInTheDocument();
   });
 
   it('should render timetable grid', () => {
     render(<Schedule />);
-    // Look for a time slot in the grid
-    expect(screen.getByTestId(/time-slot-/)).toBeInTheDocument();
+    // Look for time slots in the grid
+    const timeSlots = screen.getAllByTestId(/time-slot-/);
+    expect(timeSlots.length).toBeGreaterThan(0);
   });
 });
 
