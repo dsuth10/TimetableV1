@@ -113,9 +113,9 @@ const Schedule: React.FC = () => {
       return;
     }
 
-    // draggableId can be `assign-<id>` or `task-<id>` for right panel items
+    // draggableId can be `assignment-<id>` or `task-<id>` for right panel items
     const isTaskDrag = draggableId.startsWith('task-');
-    const isAssignDrag = draggableId.startsWith('assign-');
+    const isAssignDrag = draggableId.startsWith('assignment-');
 
     const draggableNumericId = (() => {
       const parts = draggableId.split('-');
@@ -199,6 +199,10 @@ const Schedule: React.FC = () => {
       const endTime = new Date();
       endTime.setHours(startHour, startMinute + 30, 0, 0);
       const endTimeString = endTime.toTimeString().slice(0, 5);
+      
+      // Normalize time format to HH:MM (remove seconds if present)
+      const normalizedStartTime = destTimeSlot.includes(':') ? destTimeSlot.split(':').slice(0, 2).join(':') : destTimeSlot;
+      const normalizedEndTime = endTimeString.includes(':') ? endTimeString.split(':').slice(0, 2).join(':') : endTimeString;
 
       if (isTaskDrag) {
         // Create a new assignment from a Task (no existing assignment row)
@@ -221,8 +225,8 @@ const Schedule: React.FC = () => {
                 task_id: newAssignmentPayload.taskId,
                 aide_id: newAssignmentPayload.aideId,
                 date: targetDate.toISOString().split('T')[0],
-                start_time: destTimeSlot,
-                end_time: endTimeString,
+                start_time: normalizedStartTime,
+                end_time: normalizedEndTime,
               }),
             });
             if (!res.ok) {
@@ -237,8 +241,8 @@ const Schedule: React.FC = () => {
                       task_id: newAssignmentPayload.taskId as unknown as number,
                       aide_id: newAssignmentPayload.aideId,
                       date: targetDate.toISOString().split('T')[0],
-                      start_time: destTimeSlot,
-                      end_time: endTimeString,
+                      start_time: normalizedStartTime,
+                      end_time: normalizedEndTime,
                       status: 'ASSIGNED',
                     } as unknown as Partial<Assignment>,
                     originalAssignment: {
@@ -273,8 +277,8 @@ const Schedule: React.FC = () => {
           aide_id: destAideId,
           date: targetDate.toISOString().split('T')[0],
           day: destDay,
-          start_time: destTimeSlot,
-          end_time: endTimeString,
+          start_time: normalizedStartTime,
+          end_time: normalizedEndTime,
           status: 'ASSIGNED',
         } as Assignment;
 
