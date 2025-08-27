@@ -97,7 +97,6 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
 
     const { source, destination, draggableId } = result;
 
-    // If dropping in the same place, do nothing
     if (
       source.droppableId === destination.droppableId &&
       source.index === destination.index
@@ -105,130 +104,59 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
       return;
     }
 
-    // Find the assignment being dragged
     const assignment = [...aideAssignments, ...unassignedTasks].find(
       a => a.id.toString() === draggableId
     );
-    
     if (!assignment) return;
 
-    // Determine the destination aide/day/time
+    // Handle drop to Unassigned panel
+    if (destination.droppableId === 'unassigned') {
+      const updated = { ...assignment, aide_id: null, status: 'UNASSIGNED' as const } as Assignment;
+      try {
+        await onAssignmentUpdate(updated);
+      } catch (e) {
+        // Let caller surface error/toast if needed
+      }
+      return;
+    }
+
     const [destAideIdStr, destDay, destTimeSlot] = destination.droppableId.split('-');
     const destAideId: number | null = destAideIdStr ? parseInt(destAideIdStr) : null;
-
-    // Validate parsed values
     if (destAideId === null || isNaN(destAideId) || !destDay || !destTimeSlot) {
       console.error('Invalid destination droppableId:', destination.droppableId);
       return;
     }
 
-    // Calculate the date for the destination day (assuming current week)
     const today = new Date();
     const dayIndex = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].indexOf(destDay);
     const targetDate = new Date(today);
-    targetDate.setDate(today.getDate() - today.getDay() + 1 + dayIndex); // Get Monday + dayIndex
+    targetDate.setDate(today.getDate() - today.getDay() + 1 + dayIndex);
 
-    // Prepare common update data
-    const commonUpdateData: Partial<Assignment> = {
+    const updatedAssignment: Assignment = {
+      ...assignment,
+      aide_id: destAideId,
       date: targetDate.toISOString().split('T')[0],
       start_time: destTimeSlot,
       end_time: (parseInt(destTimeSlot.split(':')[0]) + 0.5).toString().padStart(2, '0') + ':00',
-      aide_id: destAideId,
-    };
+      status: 'ASSIGNED',
+    } as Assignment;
 
-    // Case 1: Dragging from Unassigned Tasks to Timetable
-    if (source.droppableId === 'unassigned') {
-      // Check if this is a flexible task
-      if (assignment.is_flexible) {
-        // Show duration modal for flexible tasks
-        setDurationModalData({
-          assignment,
-          dropTime: destTimeSlot,
-          dropDay: destDay,
-          dropAideId: destAideId,
-        });
-        setDurationModalOpen(true);
-        return;
-      }
-
-      const updatedAssignment: Assignment = {
-        ...assignment,
-        ...commonUpdateData,
-        status: 'ASSIGNED',
-        start_time: commonUpdateData.start_time || assignment.start_time,
-        end_time: commonUpdateData.end_time || assignment.end_time,
-        date: commonUpdateData.date || assignment.date,
-      } as Assignment;
-
-      try {
-        // Check for conflicts first
-        const conflictCheck = await fetch(`/api/assignments/check`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            aide_id: updatedAssignment.aide_id,
-            date: updatedAssignment.date,
-            start_time: updatedAssignment.start_time,
-            end_time: updatedAssignment.end_time,
-          }),
-        });
-        const conflictData = await conflictCheck.json();
-
-        if (conflictData.has_conflict) {
+    try {
+      await onAssignmentUpdate(updatedAssignment);
+    } catch (error: any) {
+      // If backend returned 409 with conflict details, open modal
+      const status = error?.response?.status;
+      const data = error?.response?.data;
+      if (status === 409 && data) {
+        const conflict = data.conflict || data.conflicting_assignment || null;
+        if (conflict) {
           setConflictDetails({
-            conflictingAssignment: conflictData.conflicting_assignment,
+            conflictingAssignment: conflict as Assignment,
             newAssignmentData: updatedAssignment,
             originalAssignment: assignment,
           });
           setConflictModalOpen(true);
-          return;
         }
-
-        // No conflict, proceed with assignment
-        await onAssignmentUpdate(updatedAssignment);
-      } catch (error) {
-        console.error('Error assigning task:', error);
-      }
-    }
-    // Case 2: Moving assignment within timetable
-    else if (source.droppableId !== 'unassigned' && destination.droppableId !== 'unassigned') {
-      const updatedAssignment: Assignment = {
-        ...assignment,
-        ...commonUpdateData,
-        status: 'ASSIGNED',
-        start_time: commonUpdateData.start_time || assignment.start_time,
-        end_time: commonUpdateData.end_time || assignment.end_time,
-        date: commonUpdateData.date || assignment.date,
-      } as Assignment;
-
-      try {
-        // Check for conflicts
-        const conflictCheck = await fetch(`/api/assignments/check`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            aide_id: updatedAssignment.aide_id,
-            date: updatedAssignment.date,
-            start_time: updatedAssignment.start_time,
-            end_time: updatedAssignment.end_time,
-          }),
-        });
-        const conflictData = await conflictCheck.json();
-
-        if (conflictData.has_conflict) {
-          setConflictDetails({
-            conflictingAssignment: conflictData.conflicting_assignment,
-            newAssignmentData: updatedAssignment,
-            originalAssignment: assignment,
-          });
-          setConflictModalOpen(true);
-          return;
-        }
-
-        // No conflict, proceed with update
-        await onAssignmentUpdate(updatedAssignment);
-      } catch (error) {
-        console.error('Error updating assignment:', error);
       }
     }
   };

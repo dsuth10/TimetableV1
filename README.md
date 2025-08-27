@@ -35,7 +35,7 @@ A Flask-based web application for managing teacher aide assignments and schedule
 - Material-UI v5 (UI Components)
 - Zustand (State Management)
 - React Router v6
-- React Beautiful DnD (Drag & Drop)
+- @hello-pangea/dnd (Drag & Drop)
 - Axios (API Communication)
 - Vitest (Unit Testing)
 - React Testing Library (Component Testing)
@@ -118,7 +118,7 @@ A Flask-based web application for managing teacher aide assignments and schedule
 
 ### 🚧 In Progress
 - Final UI/UX polish and accessibility improvements
-- End-to-end testing with Playwright
+- End-to-end testing with Cypress
 - Performance optimization and bundle analysis
 
 ### 📋 Planned
@@ -211,12 +211,11 @@ npm run dev
 ```powershell
 npm run dev
 ```
-- Frontend runs at http://localhost:3000 by default. If 3000 is in use, Vite
-  will automatically choose the next available port (e.g., http://localhost:3001)
-  and print the URL in the terminal.
+- Frontend runs at http://localhost:3001 by default. If 3001 is in use, Vite
+  will automatically choose the next available port and print the URL in the terminal.
 
 3. Open the application:
-- Visit http://localhost:3000 in your browser
+- Visit http://localhost:3001 in your browser
 
 ## Testing
 
@@ -247,10 +246,24 @@ The frontend uses a comprehensive testing setup with:
 - API mocking and service layer testing
 - Proper error handling and loading state testing
 
-### End-to-End Testing
+### End-to-End Testing (Cypress)
+
+Run headless E2E against the local preview server:
+
 ```bash
-npm run test:e2e
+npx cypress run --config baseUrl=http://localhost:4173 --spec cypress/e2e/schedule.cy.ts
 ```
+
+Open Cypress GUI:
+
+```bash
+npx cypress open
+```
+
+Notes:
+- Intercepts use globs (e.g., `/api/assignments**`) so they match optional query strings.
+- Custom drag helper is defined in `cypress/support/commands.js` as `cy.dragAndDropDnd()`.
+- If the preview port changes (e.g., to 4174), update `baseUrl` accordingly.
 
 ## Frontend Architecture
 
@@ -595,15 +608,29 @@ npm run dev
 
 Visit [http://localhost:3000/](http://localhost:3000/) in your browser.
 
+### Frontend Preview (production build)
+
+To serve the production build locally with an API proxy:
+
+```bash
+npm run build
+npm run preview
+# Preview runs at http://localhost:4173 by default; if busy it will use the next port (e.g., 4174)
+```
+
+The preview server proxies `/api` to the Flask backend at `http://127.0.0.1:5000`.
+Ensure the backend is running or API calls will fail.
+
 ---
 
 ## Troubleshooting
 
 - **Blank page or 500 errors?**
-  - Make sure the Flask backend is running and the database is seeded.
+  - If using preview on 4173/4174, ensure the Flask backend is running on 5000; the preview server proxies `/api` there.
+  - Make sure the database is seeded.
   - If you see errors about existing indexes, delete `instance/timetable.db` and re-run `python seed.py`.
 - **API connection refused?**
-  - The frontend expects the backend at http://localhost:5000. Make sure it's running.
+  - Dev and preview expect the backend at http://localhost:5000 (proxy). Make sure it's running and reachable at `/api/health`.
 - **Port in use?**
   - If 3000 is in use, Vite will use the next available port. Check the terminal output for the correct URL.
 - **Scheduler not working?**

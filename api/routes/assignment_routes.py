@@ -152,11 +152,14 @@ class AssignmentResource(Resource):
             
             # Update fields
             if 'aide_id' in data:
-                # Validate aide exists
-                aide = session.query(TeacherAide).get(data['aide_id'])
-                if not aide:
-                    return error_response('NOT_FOUND', f'Teacher aide {data["aide_id"]} not found', 404)
-                assignment.aide_id = data['aide_id']
+                # Allow null for unassigning, otherwise validate aide exists
+                if data['aide_id'] is None:
+                    assignment.aide_id = None
+                else:
+                    aide = session.query(TeacherAide).get(data['aide_id'])
+                    if not aide:
+                        return error_response('NOT_FOUND', f'Teacher aide {data["aide_id"]} not found', 404)
+                    assignment.aide_id = data['aide_id']
             
             if 'date' in data:
                 try:

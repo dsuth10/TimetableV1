@@ -111,9 +111,15 @@ class ApiClient {
   }
 
   private handleError(error: any) {
+    const status = error?.response?.status;
+    // Let the UI handle 409 Conflict (e.g., open conflict resolution modal)
+    if (status === 409) {
+      return;
+    }
+
     const message = this.getErrorMessage(error);
     const type = this.getErrorType(error);
-    
+
     useUIStore.getState().addToast({
       message,
       type,

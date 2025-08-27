@@ -218,7 +218,7 @@ def test_update_assignment(client, db_session):
     db_session.commit()
 
     # Test updating assignment status
-    response = client.patch(f"/api/assignments/{assignment.id}", json={
+    response = client.put(f"/api/assignments/{assignment.id}", json={
         "status": "IN_PROGRESS"
     })
     assert response.status_code == 200
@@ -226,10 +226,20 @@ def test_update_assignment(client, db_session):
     assert data["status"] == "IN_PROGRESS"
 
     # Test updating with invalid status
-    response = client.patch(f"/api/assignments/{assignment.id}", json={
+    response = client.put(f"/api/assignments/{assignment.id}", json={
         "status": "INVALID_STATUS"
     })
     assert response.status_code == 422
+
+    # Test unassigning (setting aide_id to null)
+    response = client.put(f"/api/assignments/{assignment.id}", json={
+        "aide_id": None,
+        "status": "UNASSIGNED"
+    })
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["aide_id"] is None
+    assert data["status"] == "UNASSIGNED"
 
 def test_delete_assignment(client, db_session):
     classroom, task, aide = create_test_data(db_session)
