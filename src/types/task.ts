@@ -21,12 +21,3 @@ export interface Task {
     teacher: string;
   };
 }
-
-export interface Assignment {
-  id: number;
-  taskId: number;
-  aideId: number;
-  day: string;
-  startTime: string;
-  duration: number;
-}

@@ -87,8 +87,8 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({
     const currentDay = new Date(referenceDate);
     currentDay.setDate(referenceDate.getDate() + dayIndex);
     
-    // Format the current day as YYYY-MM-DD for reliable comparison
-    const currentDayStr = currentDay.toISOString().split('T')[0];
+    // Format the current day as YYYY-MM-DD in local time to avoid TZ shifts
+    const currentDayStr = `${currentDay.getFullYear()}-${String(currentDay.getMonth() + 1).padStart(2, '0')}-${String(currentDay.getDate()).padStart(2, '0')}`;
     
     return validAbsences.some(
       (abs) =>

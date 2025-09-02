@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
-import { Paper, Typography, Box, CircularProgress, Alert, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
+import { Paper, Typography, Box, CircularProgress, Alert, FormControl, InputLabel, Select, MenuItem, IconButton, Button, Stack } from '@mui/material';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useSearchParams } from 'react-router-dom';
 import { useAssignments } from '../hooks/useAssignments';
 import { useTeacherAides } from '../hooks/useTeacherAides';
@@ -13,11 +15,22 @@ import { useAidesStore } from '../store';
 import { tasksApi } from '../services/tasksApi';
 import type { Task } from '../types/task';
 import type { UnassignedItem } from './UnassignedTasks';
+import { useUIStore } from '../store/stores/uiStore';
 
 const Schedule: React.FC = () => {
-  const { assignments, isLoading: assignmentsLoading, error: assignmentsError, updateAssignment } = useAssignments();
+  // Initialize week state before hooks that depend on it
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
+    const today = new Date();
+    const dow = today.getDay();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - dow + 1);
+    monday.setHours(0,0,0,0);
+    return monday;
+  });
+
+  const { assignments, isLoading: assignmentsLoading, error: assignmentsError, updateAssignment } = useAssignments(currentWeekStart);
   const { teacherAides, isLoading: aidesLoading, error: aidesError } = useTeacherAides();
-  const { absences, isLoading: absencesLoading, error: absencesError } = useAbsences();
+  const { absences, isLoading: absencesLoading, error: absencesError } = useAbsences(currentWeekStart);
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedAideIdInUrl = searchParams.get('aideId');
   const { selectedAideId, setSelectedAideId } = useAidesStore();
@@ -28,7 +41,10 @@ const Schedule: React.FC = () => {
     newAssignmentData: Partial<Assignment>;
     originalAssignment: Assignment;
   } | null>(null);
+  const [isResolvingConflict, setIsResolvingConflict] = useState(false);
   const [unassignedTasks, setUnassignedTasks] = useState<Task[]>([]);
+  const { addToast } = useUIStore();
+  
 
   useEffect(() => {
     console.log('Schedule: assignments changed', assignments);
@@ -142,6 +158,9 @@ const Schedule: React.FC = () => {
         // Task dragged back to unassigned panel: no-op (it is already unassigned)
         return;
       }
+      if (!assignment) {
+        return;
+      }
       console.log('Dropping to unassigned tasks');
       // Unassign while preserving original date/time to satisfy backend validation
       const updatedAssignment = {
@@ -162,7 +181,7 @@ const Schedule: React.FC = () => {
         // Revert local state if API update fails
         setLocalAssignments((prevAssignments) => {
           const filtered = prevAssignments.filter((a) => a.id !== updatedAssignment.id);
-          return [...filtered, assignment];
+          return assignment ? [...filtered, assignment] : filtered;
         });
       }
       return;
@@ -256,6 +275,7 @@ const Schedule: React.FC = () => {
                     } as unknown as Assignment,
                   });
                   setConflictModalOpen(true);
+                  addToast({ message: 'Scheduling conflict detected. Choose how to resolve.', type: 'info', duration: 5000 });
                 }
               }
               throw new Error('Failed to create assignment');
@@ -313,6 +333,7 @@ const Schedule: React.FC = () => {
                 originalAssignment: assignment,
               });
               setConflictModalOpen(true);
+              addToast({ message: 'Scheduling conflict detected. Choose how to resolve.', type: 'info', duration: 5000 });
             }
           }
         }
@@ -327,6 +348,7 @@ const Schedule: React.FC = () => {
 
     if (action === 'replace') {
       try {
+        setIsResolvingConflict(true);
         // Step 1: Unassign the conflicting assignment (preserve its date/time)
         const unassignedConflicting = { ...conflictingAssignment, aide_id: null, status: 'UNASSIGNED' as const } as Assignment;
         await updateAssignment(conflictingAssignment.id, unassignedConflicting);
@@ -362,7 +384,7 @@ const Schedule: React.FC = () => {
             return [...filtered, unassignedConflicting, created];
           });
         }
-
+        addToast({ message: 'Conflict resolved successfully', type: 'success', duration: 4000 });
       } catch (error) {
         console.error('Failed to resolve conflict by replacing:', error);
         // Revert local state if API update fails for replacement
@@ -370,6 +392,9 @@ const Schedule: React.FC = () => {
           const filtered = prevAssignments.filter(a => a.id !== conflictingAssignment.id && a.id !== ((newAssignmentData as any).id || -1));
           return [...filtered, conflictingAssignment, originalAssignment]; // Revert both
         });
+        addToast({ message: 'Failed to resolve conflict. Please try again.', type: 'error', duration: 6000 });
+      } finally {
+        setIsResolvingConflict(false);
       }
     } else { // action === 'cancel'
       // Revert local state to original (no change)
@@ -377,6 +402,7 @@ const Schedule: React.FC = () => {
         const filtered = prevAssignments.filter(a => a.id !== ((newAssignmentData as any).id || -1)); // Remove the temp new assignment if it was optimistically added
         return [...filtered, originalAssignment]; // Add back original if it was removed
       });
+      addToast({ message: 'Conflict resolution cancelled', type: 'info', duration: 3000 });
     }
     setConflictModalOpen(false);
     setConflictDetails(null);
@@ -439,11 +465,27 @@ const Schedule: React.FC = () => {
                   </Select>
                 </FormControl>
               </Box>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <IconButton size="small" onClick={() => setCurrentWeekStart(prev => { const d = new Date(prev); d.setDate(prev.getDate() - 7); return d; })} aria-label="Previous week">
+                    <ChevronLeftIcon />
+                  </IconButton>
+                  <Typography variant="body2">
+                    Week of {currentWeekStart.toLocaleDateString()} - {new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), currentWeekStart.getDate() + 4).toLocaleDateString()}
+                  </Typography>
+                  <IconButton size="small" onClick={() => setCurrentWeekStart(prev => { const d = new Date(prev); d.setDate(prev.getDate() + 7); return d; })} aria-label="Next week">
+                    <ChevronRightIcon />
+                  </IconButton>
+                  <Button size="small" onClick={() => setCurrentWeekStart(() => { const t = new Date(); const dow = t.getDay(); const m = new Date(t); m.setDate(t.getDate() - dow + 1); m.setHours(0,0,0,0); return m; })}>Today</Button>
+                </Stack>
+              </Stack>
+
               <TimetableGrid 
                 assignments={localAssignments}
                 teacherAides={selectedAide ? [selectedAide] : []}
                 isLoading={assignmentsLoading || aidesLoading || absencesLoading}
                 absences={absences}
+                weekStartDate={currentWeekStart}
               />
             </Paper>
           </Box>
@@ -460,7 +502,7 @@ const Schedule: React.FC = () => {
                 category: a.task_category,
                 start_time: a.start_time,
                 end_time: a.end_time,
-                is_flexible: a.is_flexible,
+                is_flexible: (a as any).is_flexible ?? false,
               }));
 
             const unassignedTaskItems: UnassignedItem[] = unassignedTasks
@@ -471,7 +513,7 @@ const Schedule: React.FC = () => {
                 category: t.category,
                 start_time: t.start_time,
                 end_time: t.end_time,
-                is_flexible: t.is_flexible,
+                is_flexible: t.is_flexible ?? false,
               }));
 
             const combined: UnassignedItem[] = [...unassignedAssignmentItems, ...unassignedTaskItems];
@@ -486,6 +528,7 @@ const Schedule: React.FC = () => {
           onClose={() => handleConflictResolve('cancel')}
           onResolve={handleConflictResolve}
           conflictDetails={conflictDetails}
+          isResolving={isResolvingConflict}
         />
       )}
     </Box>

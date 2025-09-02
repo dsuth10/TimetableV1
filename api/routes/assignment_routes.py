@@ -9,6 +9,14 @@ from sqlalchemy import and_, or_
 import calendar
 from sqlalchemy.orm import joinedload
 
+def _is_half_hour_increment(t: time) -> bool:
+    return t.minute in (0, 30)
+
+def _within_business_hours(start: time, end: time) -> bool:
+    open_time = time(8, 0)
+    close_time = time(16, 0)
+    return open_time <= start and end <= close_time
+
 class AssignmentListResource(Resource):
     def get(self):
         session = next(get_db())
@@ -30,9 +38,10 @@ class AssignmentListResource(Resource):
             if status:
                 query = query.filter_by(status=status)
             if start_date:
-                query = query.filter(Assignment.date >= datetime.fromisoformat(start_date))
+                # Filter using date (Assignment.date is a Date column)
+                query = query.filter(Assignment.date >= date.fromisoformat(start_date))
             if end_date:
-                query = query.filter(Assignment.date <= datetime.fromisoformat(end_date))
+                query = query.filter(Assignment.date <= date.fromisoformat(end_date))
             
             # Get pagination parameters
             page = int(request.args.get('page', 1))
@@ -96,15 +105,70 @@ class AssignmentListResource(Resource):
 
             if start_time >= end_time:
                 return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
+
+            # Enforce 30-minute increments and business hours
+            if not (_is_half_hour_increment(start_time) and _is_half_hour_increment(end_time)):
+                return error_response('VALIDATION_ERROR', 'Times must be in 30-minute increments (HH:00 or HH:30)', 422)
+            if not _within_business_hours(start_time, end_time):
+                return error_response('VALIDATION_ERROR', 'Times must be within business hours (08:00-16:00)', 422)
             
-            # Check for existing assignment
-            existing = session.query(Assignment).filter_by(
+            # Check for existing assignment for the same task and date (duplicate)
+            existing = session.query(Assignment).options(
+                joinedload(Assignment.task),
+                joinedload(Assignment.aide)
+            ).filter_by(
                 task_id=data['task_id'],
                 date=date_value
             ).first()
             
             if existing:
-                return error_response('CONFLICT', 'Assignment already exists for this task and date', 409)
+                # Provide conflict payload for frontend UX
+                conflict_payload = serialize_assignment(existing, existing.task)
+                return {
+                    'error': {
+                        'code': 'CONFLICT',
+                        'message': 'Assignment already exists for this task and date'
+                    },
+                    'conflict': conflict_payload
+                }, 409
+
+            # Check for scheduling conflicts with the same aide on the same date (overlapping times)
+            conflict = session.query(Assignment).options(
+                joinedload(Assignment.task),
+                joinedload(Assignment.aide)
+            ).filter(
+                Assignment.aide_id == aide.id,
+                Assignment.date == date_value,
+                or_(
+                    and_(Assignment.start_time <= start_time, start_time < Assignment.end_time),
+                    and_(Assignment.start_time < end_time, end_time <= Assignment.end_time),
+                    and_(start_time <= Assignment.start_time, Assignment.start_time < end_time)
+                )
+            ).first()
+            if conflict:
+                conflict_payload = serialize_assignment(conflict, conflict.task)
+                return {
+                    'error': {
+                        'code': 'CONFLICT',
+                        'message': 'Teacher aide has a scheduling conflict'
+                    },
+                    'conflict': conflict_payload
+                }, 409
+
+            # Optional: Validate aide availability if availability model is used
+            # If Availability records exist for the aide/day, ensure requested time fits in at least one window
+            weekday = calendar.day_name[date_value.weekday()][:2].upper()  # e.g., 'MO'
+            availability_windows = session.query(Availability).filter_by(
+                aide_id=aide.id,
+                weekday=weekday
+            ).all()
+            if availability_windows:
+                fits_any = any(
+                    (window.start_time <= start_time and end_time <= window.end_time)
+                    for window in availability_windows
+                )
+                if not fits_any:
+                    return error_response('VALIDATION_ERROR', 'Requested time is outside aide availability', 422)
             
             # Create assignment
             assignment = Assignment(
@@ -184,6 +248,12 @@ class AssignmentResource(Resource):
             if assignment.start_time >= assignment.end_time:
                 return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
 
+            # Enforce 30-minute increments and business hours
+            if not (_is_half_hour_increment(assignment.start_time) and _is_half_hour_increment(assignment.end_time)):
+                return error_response('VALIDATION_ERROR', 'Times must be in 30-minute increments (HH:00 or HH:30)', 422)
+            if not _within_business_hours(assignment.start_time, assignment.end_time):
+                return error_response('VALIDATION_ERROR', 'Times must be within business hours (08:00-16:00)', 422)
+
             if 'status' in data:
                 # Validate status against allowed values
                 allowed_statuses = ['UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETE']
@@ -214,6 +284,29 @@ class AssignmentResource(Resource):
                         },
                         'conflict': conflict_payload
                     }, 409
+
+                # Validate absence overlap (treat absence as full-day)
+                absence = session.query(Absence).filter(
+                    Absence.aide_id == assignment.aide_id,
+                    Absence.start_date <= assignment.date,
+                    Absence.end_date >= assignment.date
+                ).first()
+                if absence:
+                    return error_response('VALIDATION_ERROR', 'Aide is absent on the selected date', 422)
+
+                # Optional: Validate availability window (if exists, ensure time fits a window)
+                weekday = assignment.date.strftime('%a').upper()[:2]
+                availability_windows = session.query(Availability).filter_by(
+                    aide_id=assignment.aide_id,
+                    weekday=weekday
+                ).all()
+                if availability_windows:
+                    fits_any = any(
+                        (window.start_time <= assignment.start_time and assignment.end_time <= window.end_time)
+                        for window in availability_windows
+                    )
+                    if not fits_any:
+                        return error_response('VALIDATION_ERROR', 'Requested time is outside aide availability', 422)
             
             session.commit()
             
@@ -262,7 +355,7 @@ class AssignmentBatchResource(Resource):
             for idx, assignment_data in enumerate(data['assignments']):
                 try:
                     # Validate required fields
-                    required_fields = ['task_id', 'aide_id', 'date']
+                    required_fields = ['task_id', 'aide_id', 'date', 'start_time', 'end_time']
                     for field in required_fields:
                         if field not in assignment_data:
                             errors.append({
@@ -291,18 +384,47 @@ class AssignmentBatchResource(Resource):
                     
                     # Validate date format
                     try:
-                        date = datetime.fromisoformat(assignment_data['date'])
+                        date_value = date.fromisoformat(assignment_data['date'])
                     except ValueError:
                         errors.append({
                             'index': idx,
                             'error': 'Invalid date format. Use YYYY-MM-DD'
                         })
                         continue
+
+                    # Validate time format and ordering
+                    try:
+                        start_time = time.fromisoformat(assignment_data['start_time'])
+                        end_time = time.fromisoformat(assignment_data['end_time'])
+                    except ValueError:
+                        errors.append({
+                            'index': idx,
+                            'error': 'Invalid time format. Use HH:MM'
+                        })
+                        continue
+                    if start_time >= end_time:
+                        errors.append({
+                            'index': idx,
+                            'error': 'start_time must be before end_time'
+                        })
+                        continue
+                    if not (_is_half_hour_increment(start_time) and _is_half_hour_increment(end_time)):
+                        errors.append({
+                            'index': idx,
+                            'error': 'Times must be in 30-minute increments (HH:00 or HH:30)'
+                        })
+                        continue
+                    if not _within_business_hours(start_time, end_time):
+                        errors.append({
+                            'index': idx,
+                            'error': 'Times must be within business hours (08:00-16:00)'
+                        })
+                        continue
                     
-                    # Check for existing assignment
+                    # Check for existing assignment for same task/date
                     existing = session.query(Assignment).filter_by(
                         task_id=assignment_data['task_id'],
-                        date=date
+                        date=date_value
                     ).first()
                     
                     if existing:
@@ -311,12 +433,65 @@ class AssignmentBatchResource(Resource):
                             'error': 'Assignment already exists for this task and date'
                         })
                         continue
+
+                    # Check for scheduling conflicts for the aide on the same date (overlapping times)
+                    conflict = session.query(Assignment).options(
+                        joinedload(Assignment.task),
+                        joinedload(Assignment.aide)
+                    ).filter(
+                        Assignment.aide_id == aide.id,
+                        Assignment.date == date_value,
+                        or_(
+                            and_(Assignment.start_time <= start_time, start_time < Assignment.end_time),
+                            and_(Assignment.start_time < end_time, end_time <= Assignment.end_time),
+                            and_(start_time <= Assignment.start_time, Assignment.start_time < end_time)
+                        )
+                    ).first()
+                    if conflict:
+                        errors.append({
+                            'index': idx,
+                            'error': 'Teacher aide has a scheduling conflict'
+                        })
+                        continue
+
+                    # Validate absence overlap (treat absence as full-day)
+                    absence = session.query(Absence).filter(
+                        Absence.aide_id == aide.id,
+                        Absence.start_date <= date_value,
+                        Absence.end_date >= date_value
+                    ).first()
+                    if absence:
+                        errors.append({
+                            'index': idx,
+                            'error': 'Aide is absent on the selected date'
+                        })
+                        continue
+
+                    # Validate availability window if records exist for that weekday
+                    weekday = calendar.day_name[date_value.weekday()][:2].upper()
+                    availability_windows = session.query(Availability).filter_by(
+                        aide_id=aide.id,
+                        weekday=weekday
+                    ).all()
+                    if availability_windows:
+                        fits_any = any(
+                            (window.start_time <= start_time and end_time <= window.end_time)
+                            for window in availability_windows
+                        )
+                        if not fits_any:
+                            errors.append({
+                                'index': idx,
+                                'error': 'Requested time is outside aide availability'
+                            })
+                            continue
                     
                     # Create assignment
                     assignment = Assignment(
                         task_id=assignment_data['task_id'],
                         aide_id=assignment_data['aide_id'],
-                        date=date,
+                        date=date_value,
+                        start_time=start_time,
+                        end_time=end_time,
                         status='ASSIGNED'
                     )
                     
@@ -366,17 +541,42 @@ class AssignmentCheckResource(Resource):
                 check_date = datetime.fromisoformat(data['date'])
             except ValueError:
                 return error_response('VALIDATION_ERROR', 'Invalid date format. Use YYYY-MM-DD', 422)
+
+            # Optional time window for overlap checks
+            start_time = None
+            end_time = None
+            if 'start_time' in data and 'end_time' in data:
+                try:
+                    start_time = time.fromisoformat(data['start_time'])
+                    end_time = time.fromisoformat(data['end_time'])
+                except ValueError:
+                    return error_response('VALIDATION_ERROR', 'Invalid time format. Use HH:MM', 422)
+                if start_time >= end_time:
+                    return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
             
-            # Check for existing assignments
-            assignments = session.query(Assignment).filter_by(
-                aide_id=data['aide_id'],
-                date=check_date
-            ).all()
+            # Check for existing assignments (and optional overlap)
+            assignments_query = session.query(Assignment).options(
+                joinedload(Assignment.task)
+            ).filter(
+                Assignment.aide_id == data['aide_id'],
+                Assignment.date == check_date
+            )
+            assignments = assignments_query.all()
+            overlapping_assignment = None
+            if start_time and end_time:
+                overlapping_assignment = assignments_query.filter(
+                    or_(
+                        and_(Assignment.start_time <= start_time, start_time < Assignment.end_time),
+                        and_(Assignment.start_time < end_time, end_time <= Assignment.end_time),
+                        and_(start_time <= Assignment.start_time, Assignment.start_time < end_time)
+                    )
+                ).first()
             
             # Check for absences
-            absences = session.query(Absence).filter_by(
-                aide_id=data['aide_id'],
-                date=check_date
+            absences = session.query(Absence).filter(
+                Absence.aide_id == data['aide_id'],
+                Absence.start_date <= check_date.date(),
+                Absence.end_date >= check_date.date()
             ).all()
             
             # Get aide's availability for the day
@@ -385,13 +585,24 @@ class AssignmentCheckResource(Resource):
                 aide_id=data['aide_id'],
                 weekday=weekday
             ).all()
-            
-            return {
+
+            has_conflict = False
+            conflicting_assignment = None
+            if overlapping_assignment:
+                has_conflict = True
+                conflicting_assignment = serialize_assignment(overlapping_assignment, overlapping_assignment.task)
+            elif absences:
+                has_conflict = True
+
+            response = {
                 'available': not (assignments or absences),
-                'assignments': [serialize_assignment(a, conflict.task) if conflict else None for a in assignments],
+                'has_conflict': has_conflict,
+                'conflicting_assignment': conflicting_assignment,
+                'assignments': [serialize_assignment(a, a.task if hasattr(a, 'task') else None) for a in assignments],
                 'absences': [serialize_absence(a) for a in absences],
                 'availability': [serialize_availability(a) for a in availability]
-            }, 200
+            }
+            return response, 200
             
         except Exception as e:
             return error_response('INTERNAL_ERROR', str(e), 500)

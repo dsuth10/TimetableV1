@@ -10,12 +10,18 @@ import {
   Chip,
   Avatar
 } from '@mui/material';
+import IconButton from '@mui/material/IconButton';
+import Button from '@mui/material/Button';
+import Stack from '@mui/material/Stack';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { Assignment } from '../types/assignment';
 import { TeacherAide } from '../types';
 import UnassignedTasks from './UnassignedTasks';
 import TimetableGrid from './TimetableGrid/TimetableGrid';
 import ConflictResolutionModal from './ConflictResolutionModal';
 import DurationModal from './DurationModal';
+import { useUIStore } from '../store/stores/uiStore';
 
 interface AideScheduleViewProps {
   aide: TeacherAide;
@@ -58,6 +64,8 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
     newAssignmentData: Assignment;
     originalAssignment: Assignment;
   } | null>(null);
+  const [isResolvingConflict, setIsResolvingConflict] = useState(false);
+  const { addToast } = useUIStore();
   
   // Duration modal state for flexible tasks
   const [durationModalOpen, setDurationModalOpen] = useState(false);
@@ -70,6 +78,14 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
 
   // Force re-render key to ensure draggable elements are properly registered
   const [renderKey, setRenderKey] = useState(0);
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
+    const today = new Date();
+    const dow = today.getDay();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - dow + 1);
+    monday.setHours(0,0,0,0);
+    return monday;
+  });
 
   // Memoize assignments for this specific aide and add day field
   const aideAssignments = useMemo(() => {
@@ -156,6 +172,7 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
             originalAssignment: assignment,
           });
           setConflictModalOpen(true);
+          addToast({ message: 'Scheduling conflict detected. Choose how to resolve.', type: 'info', duration: 5000 });
         }
       }
     }
@@ -164,15 +181,46 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
   const handleConflictResolve = async (resolution: 'replace' | 'cancel') => {
     if (!conflictDetails) return;
 
+    // Close modal immediately to prevent multiple clicks
+    setConflictModalOpen(false);
+
     if (resolution === 'replace') {
       try {
-        await onAssignmentUpdate(conflictDetails.newAssignmentData);
-      } catch (error) {
-        console.error('Error resolving conflict:', error);
-      }
-    }
+        setIsResolvingConflict(true);
+        console.log('🔄 Resolving conflict by replacing assignment...');
+        
+        // Step 1: Unassign the conflicting assignment (preserve its date/time)
+        console.log('Step 1: Unassigning conflicting assignment...');
+        const unassignedConflicting = { 
+          ...conflictDetails.conflictingAssignment, 
+          aide_id: null, 
+          status: 'UNASSIGNED' as const 
+        } as Assignment;
+        
+        await onAssignmentUpdate(unassignedConflicting);
+        console.log('✅ Conflicting assignment unassigned successfully');
 
-    setConflictModalOpen(false);
+        // Step 2: Apply the desired new assignment
+        console.log('Step 2: Applying new assignment...');
+        await onAssignmentUpdate(conflictDetails.newAssignmentData);
+        console.log('✅ New assignment applied successfully');
+
+        console.log('🎉 Conflict resolved successfully!');
+        addToast({ message: 'Conflict resolved successfully', type: 'success', duration: 4000 });
+
+      } catch (error) {
+        console.error('❌ Failed to resolve conflict by replacing:', error);
+        addToast({ message: 'Failed to resolve conflict. Please try again.', type: 'error', duration: 6000 });
+      } finally {
+        setIsResolvingConflict(false);
+      }
+    } else { // action === 'cancel'
+      console.log('🚫 Conflict resolution cancelled by user');
+      addToast({ message: 'Conflict resolution cancelled', type: 'info', duration: 3000 });
+      // No action needed - the original state is preserved
+    }
+    
+    // Clear conflict details
     setConflictDetails(null);
   };
 
@@ -247,16 +295,30 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
         <Box sx={{ display: 'flex', gap: 3 }}>
           {/* Left: Timetable Grid */}
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="h6" gutterBottom>
-              Weekly Schedule
-            </Typography>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+              <Typography variant="h6" gutterBottom>
+                Weekly Schedule
+              </Typography>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <IconButton size="small" onClick={() => setCurrentWeekStart(prev => { const d = new Date(prev); d.setDate(prev.getDate() - 7); return d; })} aria-label="Previous week">
+                  <ChevronLeftIcon />
+                </IconButton>
+                <Typography variant="body2">
+                  Week of {currentWeekStart.toLocaleDateString()} - {new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), currentWeekStart.getDate() + 4).toLocaleDateString()}
+                </Typography>
+                <IconButton size="small" onClick={() => setCurrentWeekStart(prev => { const d = new Date(prev); d.setDate(prev.getDate() + 7); return d; })} aria-label="Next week">
+                  <ChevronRightIcon />
+                </IconButton>
+                <Button size="small" onClick={() => setCurrentWeekStart(() => { const t = new Date(); const dow = t.getDay(); const m = new Date(t); m.setDate(t.getDate() - dow + 1); m.setHours(0,0,0,0); return m; })}>Today</Button>
+              </Stack>
+            </Stack>
             <TimetableGrid
               assignments={localAssignments}
               teacherAides={[aide]}
               isLoading={false}
               absences={absences}
               renderKey={renderKey}
-              {...(weekStartDate && { weekStartDate })}
+              weekStartDate={weekStartDate || currentWeekStart}
             />
           </Box>
 
@@ -279,6 +341,7 @@ const AideScheduleView: React.FC<AideScheduleViewProps> = ({
         onClose={() => setConflictModalOpen(false)}
         onResolve={handleConflictResolve}
         conflictDetails={conflictDetails}
+        isResolving={isResolvingConflict}
       />
       
       <DurationModal

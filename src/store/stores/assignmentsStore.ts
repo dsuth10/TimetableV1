@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Assignment } from '@/types/task';
+import type { Assignment } from '../types/assignment';
 
 export interface AssignmentsState {
   assignments: Assignment[];

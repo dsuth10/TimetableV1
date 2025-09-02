@@ -1,7 +1,7 @@
 Flask==3.0.2
 Flask-Cors==4.0.0
 Flask-RESTful==0.3.10
-SQLAlchemy==2.0.27
+SQLAlchemy==2.0.32
 python-dateutil==2.8.2
 python-dotenv==1.0.1
 pytest==8.0.2

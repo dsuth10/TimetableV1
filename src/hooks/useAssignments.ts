@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Assignment } from '../types/assignment';
 import { assignmentsApi } from '../services';
 
-export const useAssignments = () => {
+export const useAssignments = (weekStartDate?: Date) => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -11,7 +11,18 @@ export const useAssignments = () => {
     console.log('useAssignments: Fetching assignments...');
     const fetchAssignments = async () => {
       try {
-        const response = await assignmentsApi.getAll();
+        let response;
+        if (weekStartDate instanceof Date) {
+          const start = new Date(weekStartDate);
+          start.setHours(0,0,0,0);
+          const end = new Date(start);
+          end.setDate(start.getDate() + 4);
+          const startStr = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}`;
+          const endStr = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}`;
+          response = await assignmentsApi.getAll({ start_date: startStr, end_date: endStr });
+        } else {
+          response = await assignmentsApi.getAll();
+        }
         // Ensure we have an array of assignments
         const data = Array.isArray(response.data) ? response.data : [];
         setAssignments(data);
@@ -27,7 +38,7 @@ export const useAssignments = () => {
     };
 
     fetchAssignments();
-  }, []);
+  }, [weekStartDate]);
 
   const updateAssignment = async (id: number, updatedAssignment: Assignment) => {
     try {

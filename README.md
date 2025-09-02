@@ -75,6 +75,8 @@ A Flask-based web application for managing teacher aide assignments and schedule
 - **Timetable grid with weekly view**
 - **Unassigned tasks panel**
 - **Aide selection dropdown** on Schedule page with URL sync (`?aideId=`)
+- **Week navigation controls** (previous/next/today) in Schedule and Aide views
+- **Dynamic absence overlay** tied to selected week
 - **Drag-to-create**: dropping a flexible Task creates an Assignment at the dropped slot
 - **Unified unassigned panel**: shows both unassigned Assignments and flexible Tasks; tasks become assignments when dropped
 - **Task management interface**
@@ -91,7 +93,6 @@ A Flask-based web application for managing teacher aide assignments and schedule
 - **Router context resolution for all component tests**
 - **Material-UI theme provider integration**
 - **Localization provider setup for date handling**
-- **96% test pass rate with 27/28 tests passing**
 - **Proper error handling and loading state testing**
 - **Mock data management and cleanup**
 
@@ -118,7 +119,8 @@ A Flask-based web application for managing teacher aide assignments and schedule
 
 ### 🚧 In Progress
 - Final UI/UX polish and accessibility improvements
-- End-to-end testing with Cypress
+- End-to-end testing with Cypress (stabilizing drag-and-drop helper for @hello-pangea/dnd)
+- Week-based data fetching wiring (assignments/absences by selected week)
 - Performance optimization and bundle analysis
 
 ### 📋 Planned
@@ -211,11 +213,17 @@ npm run dev
 ```powershell
 npm run dev
 ```
-- Frontend runs at http://localhost:3001 by default. If 3001 is in use, Vite
+- Frontend runs at http://localhost:3000 by default. If 3000 is in use, Vite
   will automatically choose the next available port and print the URL in the terminal.
+  For E2E runs where a fixed port is required, start Vite with an explicit port:
+
+  ```bash
+  npm run dev -- --port 5173 --strictPort
+  # Frontend will be at http://localhost:5173
+  ```
 
 3. Open the application:
-- Visit http://localhost:3001 in your browser
+- Visit http://localhost:3000 in your browser (or the port Vite prints)
 
 ## Testing
 
@@ -254,6 +262,19 @@ Run headless E2E against the local preview server:
 npx cypress run --config baseUrl=http://localhost:4173 --spec cypress/e2e/schedule.cy.ts
 ```
 
+Alternatively, run against the dev server on a fixed port (useful during active development):
+
+```bash
+# Terminal 1: start frontend on a fixed port
+npm run dev -- --port 5173 --strictPort
+
+# Terminal 2: ensure backend is running (http://localhost:5000)
+python app.py
+
+# Terminal 3: run Cypress pointing to the dev server
+npx cypress run --config baseUrl=http://localhost:5173 --spec cypress/e2e/schedule.cy.ts
+```
+
 Open Cypress GUI:
 
 ```bash
@@ -263,7 +284,11 @@ npx cypress open
 Notes:
 - Intercepts use globs (e.g., `/api/assignments**`) so they match optional query strings.
 - Custom drag helper is defined in `cypress/support/commands.js` as `cy.dragAndDropDnd()`.
-- If the preview port changes (e.g., to 4174), update `baseUrl` accordingly.
+- If the preview port changes (e.g., to 4174), update `baseUrl` accordingly. For dev runs,
+  ensure `baseUrl` matches the chosen dev port (e.g., 5173 if using the example above).
+- @hello-pangea/dnd may not respond to basic mouse/drag events in headless runs. Use a robust
+  helper that simulates pointer events with consistent coordinates and dataTransfer, or add an
+  E2E-only test hook to simulate drops. Stabilization of the drag helper is in progress.
 
 ## Frontend Architecture
 

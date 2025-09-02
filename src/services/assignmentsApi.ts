@@ -42,8 +42,13 @@ interface AssignmentsResponse {
 // Assignment API functions
 export const assignmentsApi = {
   // Get all assignments
-  getAll: async () => {
-    const response = await api.get<any>('/assignments');
+  getAll: async (filters?: { start_date?: string; end_date?: string; aide_id?: number }) => {
+    const params = new URLSearchParams();
+    if (filters?.start_date) params.set('start_date', filters.start_date);
+    if (filters?.end_date) params.set('end_date', filters.end_date);
+    if (filters?.aide_id != null) params.set('aide_id', String(filters.aide_id));
+    const qs = params.toString();
+    const response = await api.get<any>(`/assignments${qs ? `?${qs}` : ''}`);
     const items = Array.isArray(response)
       ? response
       : Array.isArray(response?.items)
