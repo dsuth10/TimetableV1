@@ -1,0 +1,28 @@
+# Task ID: 10
+# Title: Frontend React Setup and Routing
+# Status: pending
+# Dependencies: 1
+# Priority: high
+# Description: Set up the React frontend with routing and global state management.
+# Details:
+1. Set up React Router with routes for:
+   - Main schedule page
+   - Aide management
+   - Task management
+   - Settings
+2. Implement global state management using Context API or Redux:
+   - Store for aides, tasks, assignments, absences
+   - Loading and error states
+3. Create API service layer for communicating with the backend
+4. Implement authentication placeholder (for future enhancement)
+5. Set up layout components:
+   - Header with navigation
+   - Main content area
+   - Modals container
+
+# Test Strategy:
+1. Test routing between different pages
+2. Verify global state updates correctly
+3. Test API service layer with mock data
+4. Ensure components receive and display state correctly
+5. Test responsive layout on desktop screens

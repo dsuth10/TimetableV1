@@ -1,0 +1,25 @@
+# Task ID: 9
+# Title: Recurrence Engine Implementation
+# Status: done
+# Dependencies: 5, 6
+# Priority: high
+# Description: Implement the recurrence engine for generating assignment shells from recurring tasks.
+# Details:
+1. Implement recurrence engine using dateutil.rrule:
+   - Parse iCal RRULE format (e.g., FREQ=WEEKLY;BYDAY=MO,WE,FR)
+   - Generate dates based on the rule and expiration date
+   - Create assignment shells for the next 4 weeks (configurable to full 10-week term)
+2. Create a function to extend the assignment horizon:
+   - Identify recurring tasks that need more future assignments
+   - Generate additional assignments up to the configured horizon
+3. Implement a scheduled task or endpoint to trigger horizon extension
+4. Handle modifications to recurring tasks:
+   - Update future unstarted assignments when task details change
+   - Keep historical assignments unchanged
+
+# Test Strategy:
+1. Unit test RRULE parsing with various patterns
+2. Test assignment shell generation for different recurrence patterns
+3. Test horizon extension logic
+4. Verify modifications to recurring tasks update future assignments correctly
+5. Test edge cases like tasks with immediate expiration

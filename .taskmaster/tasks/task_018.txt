@@ -1,0 +1,29 @@
+# Task ID: 18
+# Title: Teacher Request Form
+# Status: pending
+# Dependencies: 10
+# Priority: low
+# Description: Implement a simplified form for teachers to submit support requests.
+# Details:
+1. Create teacher request form:
+   - Fields for title, category, date, times, notes
+   - Classroom selection
+   - Validation for required fields
+   - Submit button
+2. Implement API integration:
+   - Submit form data to create an UNASSIGNED task
+   - Handle success/failure responses
+3. Add confirmation message:
+   - Show success message with request details
+   - Option to submit another request
+4. Implement form validation:
+   - Required fields
+   - Time constraints
+   - Valid date
+
+# Test Strategy:
+1. Test form with valid and invalid inputs
+2. Verify API integration works correctly
+3. Test confirmation message
+4. Verify validation rules are enforced
+5. Test accessibility features

@@ -756,11 +756,30 @@ class AssignmentListResource(Resource):
                         and_(Assignment.start_time < end_time, end_time <= Assignment.end_time),
                         and_(start_time <= Assignment.start_time, Assignment.start_time < end_time)
                     )
-                ).first()
+                ).all()
                 
                 if conflicts:
                     logger.info("/assignments conflict detected for aide_id=%s date=%s", aide.id, assignment_date)
-                    return error_response('CONFLICT', 'Teacher aide has a scheduling conflict', 409)
+                    # Include conflicting assignments in response to help client resolve
+                    serialized_conflicts = []
+                    for c in conflicts:
+                        try:
+                            session.refresh(c)
+                            if c.task:
+                                session.refresh(c.task)
+                        except Exception:
+                            pass
+                        task_title = c.task.title if getattr(c, 'task', None) else None
+                        serialized_conflicts.append(serialize_assignment(c, task_title=task_title))
+                    return {
+                        'error': {
+                            'code': 'CONFLICT',
+                            'message': 'Teacher aide has a scheduling conflict'
+                        },
+                        # prefer singular for backwards-compat and also provide list
+                        'conflicting_assignment': serialized_conflicts[0],
+                        'conflicts': serialized_conflicts
+                    }, 409
             
             # Create assignment
             assignment = Assignment(
@@ -854,7 +873,8 @@ class AssignmentResource(Resource):
             # Check for conflicts if aide or times changed
             if 'aide_id' in data or 'start_time' in data or 'end_time' in data:
                 conflicts = session.query(Assignment).options(
-                    joinedload(Assignment.task)
+                    joinedload(Assignment.task),
+                    joinedload(Assignment.aide)
                 ).filter(
                     Assignment.id != assignment_id,
                     Assignment.aide_id == assignment.aide_id,
@@ -864,10 +884,27 @@ class AssignmentResource(Resource):
                         and_(Assignment.start_time < assignment.end_time, assignment.end_time <= Assignment.end_time),
                         and_(assignment.start_time <= Assignment.start_time, Assignment.start_time < assignment.end_time)
                     )
-                ).first()
+                ).all()
                 
                 if conflicts:
-                    return error_response('CONFLICT', 'Assignment conflicts with existing assignment', 409)
+                    serialized_conflicts = []
+                    for c in conflicts:
+                        try:
+                            session.refresh(c)
+                            if c.task:
+                                session.refresh(c.task)
+                        except Exception:
+                            pass
+                        task_title = c.task.title if getattr(c, 'task', None) else None
+                        serialized_conflicts.append(serialize_assignment(c, task_title=task_title))
+                    return {
+                        'error': {
+                            'code': 'CONFLICT',
+                            'message': 'Assignment conflicts with existing assignment'
+                        },
+                        'conflicting_assignment': serialized_conflicts[0],
+                        'conflicts': serialized_conflicts
+                    }, 409
             
             session.flush()  # Get updated state without committing
             
@@ -880,6 +917,143 @@ class AssignmentResource(Resource):
             session.commit()
             return serialize_assignment(assignment), 200
             
+        except Exception as e:
+            session.rollback()
+            return error_response('INTERNAL_ERROR', str(e), 500)
+
+class AssignmentReplaceResource(Resource):
+    def post(self):
+        """Atomically unassign a conflicting assignment and create or update the desired assignment.
+
+        Request JSON:
+        {
+          "conflicting_assignment_id": int,
+          "aide_id": int,
+          "date": "YYYY-MM-DD",
+          "start_time": "HH:MM",
+          "end_time": "HH:MM",
+          "task_id": int,                        # required if creating new assignment
+          "existing_assignment_id": int         # optional; if provided, update this assignment instead of creating
+        }
+        """
+        session = next(get_db())
+        try:
+            data = request.get_json(force=True) or {}
+
+            # Validate payload basics
+            required = ["conflicting_assignment_id", "aide_id", "date", "start_time", "end_time"]
+            for f in required:
+                if f not in data:
+                    return error_response('VALIDATION_ERROR', f'Missing required field: {f}', 422)
+
+            # Parse inputs
+            conflicting_id = int(data["conflicting_assignment_id"]) if data.get("conflicting_assignment_id") is not None else None
+            aide_id = int(data["aide_id"]) if data.get("aide_id") is not None else None
+            try:
+                target_date = date.fromisoformat(str(data["date"]))
+                target_start = time.fromisoformat(str(data["start_time"]))
+                target_end = time.fromisoformat(str(data["end_time"]))
+            except ValueError:
+                return error_response('VALIDATION_ERROR', 'Invalid date or time format', 422)
+
+            if target_start >= target_end:
+                return error_response('VALIDATION_ERROR', 'start_time must be before end_time', 422)
+
+            existing_assignment_id = data.get("existing_assignment_id")
+            task_id = data.get("task_id")
+
+            # Load entities
+            conflicting = session.query(Assignment).options(
+                joinedload(Assignment.task),
+                joinedload(Assignment.aide)
+            ).get(conflicting_id)
+            if not conflicting:
+                return error_response('NOT_FOUND', 'Conflicting assignment not found', 404)
+
+            aide = session.query(TeacherAide).get(aide_id)
+            if not aide:
+                return error_response('NOT_FOUND', 'Teacher aide not found', 404)
+
+            # Ensure we either create from task or update an existing assignment
+            target_assignment = None
+            if existing_assignment_id is not None:
+                target_assignment = session.query(Assignment).options(
+                    joinedload(Assignment.task),
+                    joinedload(Assignment.aide)
+                ).get(existing_assignment_id)
+                if not target_assignment:
+                    return error_response('NOT_FOUND', 'Existing assignment not found', 404)
+            else:
+                if task_id is None:
+                    return error_response('VALIDATION_ERROR', 'task_id is required when creating a new assignment', 422)
+                task = session.query(Task).get(task_id)
+                if not task:
+                    return error_response('NOT_FOUND', 'Task not found', 404)
+
+            # Check for other conflicts at target slot (exclude the known conflicting and the target itself)
+            other_conflict = session.query(Assignment).filter(
+                Assignment.aide_id == aide_id,
+                Assignment.date == target_date,
+                Assignment.id != conflicting_id,
+                (Assignment.id != existing_assignment_id) if existing_assignment_id is not None else True,
+                or_(
+                    and_(Assignment.start_time <= target_start, target_start < Assignment.end_time),
+                    and_(Assignment.start_time < target_end, target_end <= Assignment.end_time),
+                    and_(target_start <= Assignment.start_time, Assignment.start_time < target_end)
+                )
+            ).first()
+            if other_conflict:
+                # Provide details to allow UI to continue resolution loop
+                task_title = other_conflict.task.title if other_conflict.task else None
+                return {
+                    'error': {'code': 'CONFLICT', 'message': 'Another assignment conflicts with the target slot'},
+                    'conflicting_assignment': serialize_assignment(other_conflict, task_title=task_title)
+                }, 409
+
+            # Perform atomic swap: unassign the conflicting one, then create/update target
+            conflicting.aide_id = None
+            conflicting.status = Status.UNASSIGNED
+
+            if target_assignment is not None:
+                # Update existing assignment
+                target_assignment.aide_id = aide_id
+                target_assignment.date = target_date
+                target_assignment.start_time = target_start
+                target_assignment.end_time = target_end
+                target_assignment.status = Status.ASSIGNED
+                session.flush()
+                session.refresh(target_assignment)
+                result_assignment = target_assignment
+            else:
+                # Create new assignment from task
+                new_assignment = Assignment(
+                    task_id=task.id,
+                    aide_id=aide_id,
+                    date=target_date,
+                    start_time=target_start,
+                    end_time=target_end,
+                    status=Status.ASSIGNED
+                )
+                session.add(new_assignment)
+                session.flush()
+                session.refresh(new_assignment)
+                result_assignment = new_assignment
+
+            session.commit()
+
+            # Serialize results
+            try:
+                session.refresh(conflicting)
+                if conflicting.task:
+                    session.refresh(conflicting.task)
+            except Exception:
+                pass
+
+            return {
+                'assignment': serialize_assignment(result_assignment),
+                'unassigned': serialize_assignment(conflicting)
+            }, 200
+
         except Exception as e:
             session.rollback()
             return error_response('INTERNAL_ERROR', str(e), 500)
@@ -1232,6 +1406,7 @@ api.add_resource(AvailabilityListResource, '/teacher-aides/<int:aide_id>/availab
 api.add_resource(AvailabilityResource, '/teacher-aides/<int:aide_id>/availability/<int:avail_id>')
 api.add_resource(AssignmentListResource, '/assignments')
 api.add_resource(AssignmentResource, '/assignments/<int:assignment_id>')
+api.add_resource(AssignmentReplaceResource, '/assignments/replace')
 api.add_resource(AssignmentBatchResource, '/assignments/batch')
 api.add_resource(AssignmentCheckResource, '/assignments/check')
 api.add_resource(HorizonExtensionResource, '/assignments/extend-horizon')

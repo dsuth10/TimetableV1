@@ -56,6 +56,37 @@ const Schedule: React.FC = () => {
     }
   }, [assignments]);
 
+  // Expose current localAssignments for Cypress assertions (test-only)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__assignments = localAssignments;
+    }
+  }, [localAssignments]);
+
+  // Headless-friendly trigger: listen for a custom event to invoke the same onDragEnd logic
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (evt: Event) => {
+      try {
+        const anyEvt = evt as any;
+        const result = anyEvt?.detail;
+        if (result && typeof result === 'object') {
+          const fn = (window as any).__scheduleHandleDragEnd;
+          if (typeof fn === 'function') {
+            fn(result);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to handle test-drop event', e);
+      }
+    };
+    window.addEventListener('test-drop', handler as EventListener);
+    (window as any).__harnessReady = true;
+    return () => {
+      window.removeEventListener('test-drop', handler as EventListener);
+    };
+  }, []);
+
   // Fetch unassigned Tasks (those without assignments)
   useEffect(() => {
     const fetchUnassignedTasks = async () => {
@@ -206,11 +237,11 @@ const Schedule: React.FC = () => {
         return;
       }
 
-      // Calculate the date for the destination day
-      const today = new Date();
+      // Calculate the date for the destination day based on currentWeekStart (Monday)
+      const monday = currentWeekStart instanceof Date ? new Date(currentWeekStart) : (() => { const t = new Date(); const dow = t.getDay(); const m = new Date(t); m.setDate(t.getDate() - dow + 1); m.setHours(0,0,0,0); return m; })();
       const dayIndex = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].indexOf(destDay);
-      const targetDate = new Date(today);
-      targetDate.setDate(today.getDate() - today.getDay() + 1 + dayIndex);
+      const targetDate = new Date(monday);
+      targetDate.setDate(monday.getDate() + dayIndex);
 
       // Calculate end time (30 minutes after start time)
       const startHour = parseInt(destTimeSlot.split(':')[0]);
@@ -243,7 +274,7 @@ const Schedule: React.FC = () => {
               body: JSON.stringify({
                 task_id: newAssignmentPayload.taskId,
                 aide_id: newAssignmentPayload.aideId,
-                date: targetDate.toISOString().split('T')[0],
+                date: `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`,
                 start_time: normalizedStartTime,
                 end_time: normalizedEndTime,
               }),
@@ -259,7 +290,7 @@ const Schedule: React.FC = () => {
                     newAssignmentData: {
                       task_id: newAssignmentPayload.taskId as unknown as number,
                       aide_id: newAssignmentPayload.aideId,
-                      date: targetDate.toISOString().split('T')[0],
+                      date: `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`,
                       start_time: normalizedStartTime,
                       end_time: normalizedEndTime,
                       status: 'ASSIGNED',
@@ -295,7 +326,7 @@ const Schedule: React.FC = () => {
         const updatedAssignment: Assignment = {
           ...assignment,
           aide_id: destAideId,
-          date: targetDate.toISOString().split('T')[0],
+          date: `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`,
           day: destDay,
           start_time: normalizedStartTime,
           end_time: normalizedEndTime,
@@ -321,25 +352,132 @@ const Schedule: React.FC = () => {
             return [...filtered, assignment];
           });
 
-          // If conflict (409), open modal with details
-          const status = error?.response?.status;
-          const data = error?.response?.data;
-          if (status === 409 && data) {
-            const conflict = data.conflict || data.conflicting_assignment || null;
-            if (conflict) {
-              setConflictDetails({
-                conflictingAssignment: conflict as Assignment,
-                newAssignmentData: updatedAssignment,
-                originalAssignment: assignment,
+          // If conflict (409), open modal with details; fallback to preflight check
+          const status = (error as any)?.response?.status;
+          const data = (error as any)?.response?.data;
+          let conflict = data?.conflict || data?.conflicting_assignment || null;
+          if (!conflict && status === 409) {
+            try {
+              const res = await fetch('/api/assignments/check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  aide_id: updatedAssignment.aide_id,
+                  date: updatedAssignment.date,
+                  start_time: updatedAssignment.start_time,
+                  end_time: updatedAssignment.end_time,
+                }),
               });
-              setConflictModalOpen(true);
-              addToast({ message: 'Scheduling conflict detected. Choose how to resolve.', type: 'info', duration: 5000 });
-            }
+              const body = await res.json().catch(() => ({}));
+              conflict = body?.conflicting_assignment || null;
+            } catch {}
+          }
+          if (status === 409 && conflict) {
+            setConflictDetails({
+              conflictingAssignment: conflict as Assignment,
+              newAssignmentData: updatedAssignment,
+              originalAssignment: assignment,
+            });
+            setConflictModalOpen(true);
+            addToast({ message: 'Scheduling conflict detected. Choose how to resolve.', type: 'info', duration: 5000 });
           }
         }
       }
     }
   };
+
+  // Expose handleDragEnd for headless/test harnesses without referencing it before initialization
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__scheduleHandleDragEnd = handleDragEnd as any;
+      return () => {
+        if ((window as any).__scheduleHandleDragEnd === handleDragEnd) {
+          delete (window as any).__scheduleHandleDragEnd;
+        }
+      };
+    }
+  }, [handleDragEnd]);
+
+  // (moved to effect below)
+
+  // Expose a test-only helper for Cypress to trigger a drop without relying on complex DnD event chains
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__triggerDrop = (draggableId: string, destDroppableId: string) => {
+        const result: any = {
+          draggableId,
+          source: { droppableId: 'unassigned', index: 0 },
+          destination: { droppableId: destDroppableId, index: 0 },
+          reason: 'DROP',
+          type: 'DEFAULT',
+        };
+        const fn = (window as any).__scheduleHandleDragEnd;
+        if (typeof fn === 'function') {
+          fn(result);
+        }
+      };
+      return () => {
+        delete (window as any).__triggerDrop;
+      };
+    }
+  }, []);
+
+  // Cypress harness: assign an existing assignment id to a destination slot deterministically
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__assignToSlot = async (assignmentId: number, destDroppableId: string) => {
+        try {
+          const [destAideIdStr, destDay, destTimeSlot] = String(destDroppableId).split('-');
+          const destAideId = parseInt(destAideIdStr, 10);
+          if (!destAideId || !destDay || !destTimeSlot) return;
+
+          // Compute date for the destination day based on currentWeekStart
+          const daysIndexMap: Record<string, number> = { 'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3, 'Friday': 4 };
+          const dayIndex = daysIndexMap[destDay] ?? 0;
+          const base = currentWeekStart instanceof Date ? new Date(currentWeekStart) : new Date();
+          base.setHours(0,0,0,0);
+          const targetDate = new Date(base);
+          targetDate.setDate(base.getDate() + dayIndex);
+          const targetDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`;
+
+          // Compute end time (30 min after start)
+          const [hStr, mStr] = destTimeSlot.split(':');
+          const h = parseInt(hStr, 10);
+          const m = parseInt(mStr, 10);
+          const end = new Date();
+          end.setHours(h, m + 30, 0, 0);
+          const endStr = end.toTimeString().slice(0, 5);
+          const normalizedStart = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+          const normalizedEnd = endStr.includes(':') ? endStr.split(':').slice(0,2).join(':') : endStr;
+
+          let updated: Assignment | null = null;
+          setLocalAssignments(prev => {
+            const existing = prev.find(a => a.id === assignmentId);
+            if (!existing) {
+              return prev;
+            }
+            updated = {
+              ...existing,
+              aide_id: destAideId,
+              date: targetDateStr,
+              day: destDay as any,
+              start_time: normalizedStart,
+              end_time: normalizedEnd,
+              status: 'ASSIGNED',
+            } as Assignment;
+            const filtered = prev.filter(a => a.id !== assignmentId);
+            return [...filtered, updated!];
+          });
+
+          if (updated) {
+            await updateAssignment(assignmentId, updated);
+          }
+        } catch (e) {
+          // no-op; Cypress will surface failures via intercept/DOM asserts
+        }
+      };
+    }
+  }, [updateAssignment, currentWeekStart]);
 
   const handleConflictResolve = async (action: 'replace' | 'cancel') => {
     if (!conflictDetails) return;
@@ -349,41 +487,56 @@ const Schedule: React.FC = () => {
     if (action === 'replace') {
       try {
         setIsResolvingConflict(true);
-        // Step 1: Unassign the conflicting assignment (preserve its date/time)
-        const unassignedConflicting = { ...conflictingAssignment, aide_id: null, status: 'UNASSIGNED' as const } as Assignment;
-        await updateAssignment(conflictingAssignment.id, unassignedConflicting);
-
-        // Step 2: Apply the desired new assignment
-        if (newAssignmentData && (newAssignmentData as any).id) {
-          // It was an update of an existing assignment
-          const assignedNew = { ...newAssignmentData, status: 'ASSIGNED' } as Assignment;
-          await updateAssignment((newAssignmentData as any).id as number, assignedNew);
-
-          setLocalAssignments(prevAssignments => {
-            const filtered = prevAssignments.filter(a => a.id !== conflictingAssignment.id && a.id !== (newAssignmentData as any).id);
-            return [...filtered, unassignedConflicting, assignedNew];
-          });
+        // Atomic replace endpoint
+        const payload: any = {
+          conflicting_assignment_id: conflictingAssignment.id,
+          aide_id: (newAssignmentData as any).aide_id,
+          date: (newAssignmentData as any).date,
+          start_time: (newAssignmentData as any).start_time,
+          end_time: (newAssignmentData as any).end_time,
+        };
+        if ((newAssignmentData as any).id) {
+          payload.existing_assignment_id = (newAssignmentData as any).id;
         } else {
-          // It was a creation from a Task; create after unassigning the conflict
-          const res = await fetch('/api/assignments', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              task_id: (newAssignmentData as any).task_id,
-              aide_id: (newAssignmentData as any).aide_id,
-              date: (newAssignmentData as any).date,
-              start_time: (newAssignmentData as any).start_time,
-              end_time: (newAssignmentData as any).end_time,
-            }),
-          });
-          if (!res.ok) throw new Error('Failed to create assignment after replace');
-          const created = (await res.json()) as Assignment;
-
-          setLocalAssignments(prevAssignments => {
-            const filtered = prevAssignments.filter(a => a.id !== conflictingAssignment.id);
-            return [...filtered, unassignedConflicting, created];
-          });
+          payload.task_id = (newAssignmentData as any).task_id;
         }
+        const res = await fetch('/api/assignments/replace', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          if (res.status === 409) {
+            const body = await res.json().catch(() => ({}));
+            const nextConflict = body?.conflicting_assignment || body?.conflict || null;
+            if (nextConflict) {
+              setConflictDetails({
+                conflictingAssignment: nextConflict as Assignment,
+                newAssignmentData,
+                originalAssignment,
+              });
+              addToast({ message: 'Still conflicting; review the new conflict.', type: 'warning', duration: 5000 });
+              return;
+            }
+          }
+          throw new Error('Failed to replace');
+        }
+        const body = await res.json();
+        const created: Assignment | undefined = body?.assignment;
+        const unassigned: Assignment | undefined = body?.unassigned;
+
+        setLocalAssignments(prevAssignments => {
+          let next = prevAssignments.slice();
+          if (unassigned) {
+            next = next.filter(a => a.id !== unassigned.id);
+            next.push(unassigned);
+          }
+          if (created) {
+            next = next.filter(a => a.id !== created.id);
+            next.push(created);
+          }
+          return next;
+        });
         addToast({ message: 'Conflict resolved successfully', type: 'success', duration: 4000 });
       } catch (error) {
         console.error('Failed to resolve conflict by replacing:', error);
@@ -478,6 +631,22 @@ const Schedule: React.FC = () => {
                   </IconButton>
                   <Button size="small" onClick={() => setCurrentWeekStart(() => { const t = new Date(); const dow = t.getDay(); const m = new Date(t); m.setDate(t.getDate() - dow + 1); m.setHours(0,0,0,0); return m; })}>Today</Button>
                 </Stack>
+                {typeof window !== 'undefined' && (window as any).Cypress && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    data-cy="simulate-drop"
+                    onClick={() => (handleDragEnd as any)({
+                      draggableId: 'assignment-1',
+                      source: { droppableId: 'unassigned', index: 0 },
+                      destination: { droppableId: '1-Monday-08:00', index: 0 },
+                      reason: 'DROP',
+                      type: 'DEFAULT',
+                    })}
+                  >
+                    Simulate Drop
+                  </Button>
+                )}
               </Stack>
 
               <TimetableGrid 

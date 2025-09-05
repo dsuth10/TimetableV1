@@ -1,0 +1,28 @@
+# Task ID: 17
+# Title: Status Tracking for Aides
+# Status: pending
+# Dependencies: 11
+# Priority: medium
+# Description: Implement functionality for aides to update the status of their assignments.
+# Details:
+1. Implement status toggle on assignment cards:
+   - Click to cycle through statuses (ASSIGNED → IN_PROGRESS → COMPLETE)
+   - Visual indicators for each status
+   - Animation for status changes
+2. Add API integration:
+   - Call PATCH /api/assignments/<id> with new status
+   - Handle success/failure responses
+3. Implement completed task styling:
+   - Strike-through title
+   - Fade color
+4. Add aide-specific view:
+   - Filter timetable to show only current aide's assignments
+   - Simplified interface focused on status updates
+
+# Test Strategy:
+1. Test status toggle UI
+2. Verify API calls are made correctly
+3. Test visual indicators for different statuses
+4. Verify completed task styling
+5. Test aide-specific view
+6. Test accessibility features

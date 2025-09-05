@@ -38,11 +38,13 @@ const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ items, renderKey = 0 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('ALL');
 
-  const allCategories = ['ALL', ...Array.from(new Set(items.map(a => a.category)))];
+  const allCategories = ['ALL', ...Array.from(new Set(items.map(a => a.category || 'UNKNOWN')))].filter(Boolean);
 
   const filteredItems = items.filter((item) => {
-    const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = filterCategory === 'ALL' || item.category === filterCategory;
+    const safeTitle = (item.title || '').toLowerCase();
+    const matchesSearch = safeTitle.includes((searchTerm || '').toLowerCase());
+    const itemCat = item.category || 'UNKNOWN';
+    const matchesCategory = filterCategory === 'ALL' || itemCat === filterCategory;
     return matchesSearch && matchesCategory;
   });
 
@@ -118,7 +120,7 @@ const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ items, renderKey = 0 
                       sx={{
                         mb: 1,
                         bgcolor: snapshot.isDragging ? 'action.selected' : 'background.paper',
-                        border: `1px solid ${CATEGORY_COLORS[item.category] || '#ccc'}`,
+                        border: `1px solid ${CATEGORY_COLORS[item.category || 'UNKNOWN'] || '#ccc'}`,
                         borderRadius: 1,
                         boxShadow: snapshot.isDragging ? 3 : 1,
                         transition: 'all 0.2s ease',
@@ -142,10 +144,10 @@ const UnassignedTasks: React.FC<UnassignedTasksProps> = ({ items, renderKey = 0 
                         </Typography>
                         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                           <Chip
-                            label={item.category}
+                            label={item.category || 'UNKNOWN'}
                             size="small"
                             sx={{
-                              bgcolor: CATEGORY_COLORS[item.category] || '#ccc',
+                              bgcolor: CATEGORY_COLORS[item.category || 'UNKNOWN'] || '#ccc',
                               color: 'white',
                               fontSize: '0.75rem',
                             }}

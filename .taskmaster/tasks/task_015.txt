@@ -1,0 +1,28 @@
+# Task ID: 15
+# Title: Conflict Resolution Modal
+# Status: pending
+# Dependencies: 13
+# Priority: high
+# Description: Implement the conflict resolution modal for handling assignment conflicts.
+# Details:
+1. Create conflict modal component:
+   - Display details of current assignment
+   - Display details of new assignment
+   - Options: Replace or Cancel
+2. Implement replace action:
+   - Set current assignment to UNASSIGNED
+   - Assign new task to the slot
+   - Update UI to reflect changes
+3. Implement cancel action:
+   - Close modal without changes
+   - Return task to original position
+4. Add visual comparison between conflicting tasks
+5. Include keyboard shortcuts for quick resolution
+
+# Test Strategy:
+1. Test modal appears correctly when conflict detected
+2. Verify replace action works as expected
+3. Test cancel action
+4. Verify UI updates correctly after resolution
+5. Test keyboard shortcuts
+6. Test accessibility features

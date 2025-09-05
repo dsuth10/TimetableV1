@@ -1,0 +1,32 @@
+# Task ID: 13
+# Title: Drag and Drop Implementation
+# Status: pending
+# Dependencies: 11, 12
+# Priority: high
+# Description: Implement drag and drop functionality for assigning tasks to aides and handling conflicts.
+# Details:
+1. Set up React DnD library:
+   - Define drag sources (task cards)
+   - Define drop targets (timetable slots)
+2. Implement drag behavior:
+   - Visual feedback during drag
+   - Validation of drop targets
+   - Rejection animation for invalid drops
+3. Implement drop handling:
+   - Call assignment API on successful drop
+   - Handle API responses
+   - Show error messages for failures
+4. Implement conflict detection:
+   - Call collision check API before finalizing drop
+   - Show conflict modal if collision detected
+5. Implement drag between aides:
+   - Allow reassigning tasks by dragging between aide columns
+   - Apply same conflict rules
+
+# Test Strategy:
+1. Test dragging tasks from unassigned list to timetable
+2. Test dragging tasks between aides
+3. Verify conflict detection works correctly
+4. Test invalid drops (e.g., onto absent aide)
+5. Verify visual feedback during drag operations
+6. Test keyboard accessibility for drag and drop

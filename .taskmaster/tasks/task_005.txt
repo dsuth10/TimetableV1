@@ -1,0 +1,29 @@
+# Task ID: 5
+# Title: Task Management API Endpoints
+# Status: done
+# Dependencies: 2
+# Priority: high
+# Description: Implement API endpoints for creating, retrieving, updating, and deleting tasks.
+# Details:
+1. Create RESTful endpoints for tasks:
+   - GET /api/tasks - List tasks with optional filters (status, date, category)
+   - POST /api/tasks - Create one-off task
+   - POST /api/recurring-tasks - Create recurring task with RRULE
+   - GET /api/tasks/<id> - Get task details
+   - PUT /api/tasks/<id> - Update task
+   - DELETE /api/tasks/<id> - Delete task and future occurrences
+2. Implement recurrence logic using dateutil.rrule:
+   - Parse iCal RRULE format
+   - Generate assignment shells for the next 4 weeks (configurable)
+   - Handle expiration dates
+3. Include validation for all inputs
+4. Implement filtering by status, date, and category
+5. Return appropriate HTTP status codes
+
+# Test Strategy:
+1. Unit test each endpoint with valid and invalid data
+2. Test recurrence rule parsing and generation
+3. Verify filters work correctly
+4. Test task creation, updating, and deletion
+5. Verify cascading effects on assignments
+6. Test edge cases like invalid recurrence rules

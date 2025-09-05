@@ -1,0 +1,28 @@
+# Task ID: 4
+# Title: Teacher Aide API Endpoints
+# Status: pending
+# Dependencies: 2
+# Priority: high
+# Description: Implement API endpoints for managing teacher aides and their availability.
+# Details:
+1. Create RESTful endpoints for teacher aides:
+   - GET /api/teacher-aides - List all aides
+   - POST /api/teacher-aides - Create a new aide
+   - GET /api/teacher-aides/<id> - Get aide details
+   - PUT /api/teacher-aides/<id> - Update aide
+   - DELETE /api/teacher-aides/<id> - Delete aide
+2. Implement availability management:
+   - GET /api/teacher-aides/<id>/availability - Get aide's availability
+   - POST /api/teacher-aides/<id>/availability - Add availability
+   - PUT /api/teacher-aides/<id>/availability/<id> - Update availability
+   - DELETE /api/teacher-aides/<id>/availability/<id> - Delete availability
+3. Include validation for all inputs
+4. Return appropriate HTTP status codes for success/failure
+5. Format responses as JSON
+
+# Test Strategy:
+1. Unit test each endpoint with valid and invalid data
+2. Test CRUD operations for teacher aides and availability
+3. Verify validation rules are enforced
+4. Test error handling and status codes
+5. Benchmark response times to ensure they meet the <150ms requirement

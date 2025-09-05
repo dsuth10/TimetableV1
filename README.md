@@ -256,23 +256,25 @@ The frontend uses a comprehensive testing setup with:
 
 ### End-to-End Testing (Cypress)
 
-Run headless E2E against the local preview server:
-
-```bash
-npx cypress run --config baseUrl=http://localhost:4173 --spec cypress/e2e/schedule.cy.ts
-```
-
-Alternatively, run against the dev server on a fixed port (useful during active development):
+Run headless E2E against the dev server (recommended for CI stability):
 
 ```bash
 # Terminal 1: start frontend on a fixed port
 npm run dev -- --port 5173 --strictPort
 
-# Terminal 2: ensure backend is running (http://localhost:5000)
-python app.py
+# Terminal 2: (optional) start backend if not fully stubbed in tests
+python app.py  # http://localhost:5000
 
 # Terminal 3: run Cypress pointing to the dev server
 npx cypress run --config baseUrl=http://localhost:5173 --spec cypress/e2e/schedule.cy.ts
+```
+
+Alternatively, run against the local preview server:
+
+```bash
+npm run build
+npm run preview  # default http://localhost:4173
+npx cypress run --config baseUrl=http://localhost:4173 --spec cypress/e2e/schedule.cy.ts
 ```
 
 Open Cypress GUI:
@@ -283,12 +285,29 @@ npx cypress open
 
 Notes:
 - Intercepts use globs (e.g., `/api/assignments**`) so they match optional query strings.
-- Custom drag helper is defined in `cypress/support/commands.js` as `cy.dragAndDropDnd()`.
+- Custom drag helpers are available (see `cypress/support/commands.js`). For headless stability with `@hello-pangea/dnd`, prefer a test harness approach:
+  - The Schedule page exposes Cypress-only hooks during dev:
+    - `window.__triggerDrop(result)` to invoke the same `onDragEnd` code path
+    - `window.__assignToSlot(assignmentId, destDroppableId)` to deterministically move an item
+  - A custom DOM event `test-drop` is also listened to; dispatch it to simulate a drop:
+    ```js
+    cy.window().then(win => {
+      win.dispatchEvent(new CustomEvent('test-drop', {
+        detail: {
+          draggableId: 'assignment-1',
+          source: { droppableId: 'unassigned', index: 0 },
+          destination: { droppableId: '1-Monday-08:00', index: 0 },
+          reason: 'DROP', type: 'DEFAULT'
+        }
+      }));
+    });
+    ```
+  - This avoids flakiness from synthetic pointer/mouse events in headless browsers and still validates the exact scheduling code path.
 - If the preview port changes (e.g., to 4174), update `baseUrl` accordingly. For dev runs,
   ensure `baseUrl` matches the chosen dev port (e.g., 5173 if using the example above).
 - @hello-pangea/dnd may not respond to basic mouse/drag events in headless runs. Use a robust
-  helper that simulates pointer events with consistent coordinates and dataTransfer, or add an
-  E2E-only test hook to simulate drops. Stabilization of the drag helper is in progress.
+  helper that simulates pointer events with consistent coordinates and dataTransfer, or use the
+  E2E-only test harness described above. The harness is preferred for CI stability.
 
 ## Frontend Architecture
 

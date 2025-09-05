@@ -19,14 +19,12 @@ Cypress.Commands.add('dragAndDropDnd', (subjectSelector, targetSelector) => {
 
       // Start drag
       cy.wrap($subject)
-        .trigger('pointerdown', { button: 0, clientX: startX, clientY: startY, force: true })
-        .trigger('mousedown', { which: 1, clientX: startX, clientY: startY, force: true })
+        .realMouseDown({ position: 'center' })
         .trigger('dragstart', { dataTransfer, force: true });
 
       // Move over target
       cy.get('body')
-        .trigger('mousemove', { clientX: endX, clientY: endY, force: true })
-        .trigger('pointermove', { clientX: endX, clientY: endY, force: true });
+        .realMouseMove(endX, endY);
 
       cy.wrap($target)
         .trigger('dragenter', { dataTransfer, force: true })
@@ -35,8 +33,7 @@ Cypress.Commands.add('dragAndDropDnd', (subjectSelector, targetSelector) => {
 
       // End drag
       cy.get('body')
-        .trigger('mouseup', { clientX: endX, clientY: endY, force: true })
-        .trigger('pointerup', { clientX: endX, clientY: endY, force: true });
+        .realMouseUp({ position: 'center' });
 
       // Fire dragend on subject to finalize DnD lifecycle
       cy.wrap($subject).trigger('dragend', { dataTransfer, force: true });

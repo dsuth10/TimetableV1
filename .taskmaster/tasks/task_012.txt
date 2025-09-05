@@ -1,0 +1,29 @@
+# Task ID: 12
+# Title: Unassigned Task List Component
+# Status: pending
+# Dependencies: 10
+# Priority: high
+# Description: Implement the unassigned task list component for displaying and filtering tasks awaiting assignment.
+# Details:
+1. Create a scrollable list component:
+   - Sticky header per weekday
+   - Search box for filtering by title
+   - Category filters
+2. Implement task card components:
+   - Show title, time, category
+   - Visual indication for different categories
+   - Hover effects with full details
+3. Add sorting options:
+   - By time
+   - By category
+   - By priority
+4. Implement keyboard shortcuts for navigation
+5. Add empty state for when no tasks are unassigned
+
+# Test Strategy:
+1. Test rendering with various data sets
+2. Verify filtering and sorting work correctly
+3. Test search functionality
+4. Verify keyboard shortcuts work
+5. Test accessibility features
+6. Ensure WCAG AA compliance for colors and contrast

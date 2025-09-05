@@ -52,21 +52,25 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({
   const validAbsences = Array.isArray(absences) ? absences : [];
 
   const getAssignmentForSlot = (aideId: number, day: string, time: string) => {
-    return assignments.find(
-      (a) => {
-        // Convert assignment date to day name for comparison
-        const assignmentDate = new Date(a.date);
-        const assignmentDay = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][assignmentDate.getDay()];
-        
-        return (
-          a.aide_id === aideId &&
-          assignmentDay === day &&
-          a.start_time && a.start_time <= time && // Check for undefined
-          a.end_time && a.end_time > time &&      // Check for undefined
-          a.status === 'ASSIGNED' // Only show assigned tasks in the grid
-        );
-      }
-    );
+    // Compute the target local date string (YYYY-MM-DD) for the given day in the displayed week
+    const daysIndexMap: Record<string, number> = { 'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3, 'Friday': 4 };
+    const dayIndex = daysIndexMap[day] ?? 0;
+
+    const referenceMonday = weekStartDate || getCurrentWeekMonday();
+    const target = new Date(referenceMonday);
+    target.setHours(0, 0, 0, 0);
+    target.setDate(referenceMonday.getDate() + dayIndex);
+    const targetDateStr = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`;
+
+    return assignments.find((a) => {
+      return (
+        a.aide_id === aideId &&
+        a.date === targetDateStr &&
+        a.start_time && a.start_time <= time &&
+        a.end_time && a.end_time > time &&
+        a.status === 'ASSIGNED'
+      );
+    });
   };
 
   // Helper function to determine if this time slot should render the draggable element

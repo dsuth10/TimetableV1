@@ -1,0 +1,31 @@
+# Task ID: 16
+# Title: Absence Management UI
+# Status: pending
+# Dependencies: 11
+# Priority: medium
+# Description: Implement UI components for marking aides as absent and visualizing absences.
+# Details:
+1. Create absence modal component:
+   - Aide selection dropdown
+   - Date picker
+   - Optional reason field
+   - Submit and cancel buttons
+2. Implement absence visualization:
+   - Grey diagonal stripes overlay on timetable
+   - Tooltip showing absence reason
+   - Visual indicator in aide list
+3. Implement absence deletion:
+   - Button to remove absence
+   - Confirmation dialog
+   - Feedback on reassignment success/failure
+4. Add validation:
+   - Prevent duplicate absences
+   - Date validation
+
+# Test Strategy:
+1. Test absence modal with valid and invalid inputs
+2. Verify absence visualization appears correctly
+3. Test absence deletion and reassignment
+4. Verify validation prevents duplicates
+5. Test API integration
+6. Test accessibility features

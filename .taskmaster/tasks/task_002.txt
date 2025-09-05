@@ -1,0 +1,31 @@
+# Task ID: 2
+# Title: Database Schema and Migrations
+# Status: pending
+# Dependencies: 1
+# Priority: high
+# Description: Design and implement the database schema for all entities as specified in the PRD. Set up migration system using Alembic.
+# Details:
+1. Create SQLAlchemy models for all entities:
+   - TeacherAide (id, name, qualifications, colour_hex)
+   - Availability (id, aide_id, weekday, start_time, end_time)
+   - Classroom (id, name, capacity, notes)
+   - Task (id, title, category, start_time, end_time, recurrence_rule, expires_on, classroom_id, notes, status)
+   - Assignment (id, task_id, aide_id, date, start_time, end_time, status)
+   - Absence (id, aide_id, date, reason, created_at)
+2. Define relationships between models:
+   - TeacherAide has many Availability, Assignment, Absence
+   - Task may belong to a Classroom
+   - Task has many Assignment
+   - Assignment links a Task to an aide
+3. Set up Alembic for database migrations
+4. Create initial migration script
+5. Add unique constraints:
+   - (aide_id, date) for Absence
+   - Ensure assignments cannot overlap for a single aide
+6. Implement database initialization script
+
+# Test Strategy:
+1. Run migrations to verify schema creation
+2. Test model relationships with sample data
+3. Verify constraints work as expected (e.g., cannot create duplicate absences)
+4. Test database rollback and migration versioning

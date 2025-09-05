@@ -1,0 +1,33 @@
+# Task ID: 14
+# Title: Task Creation and Edit Modals
+# Status: pending
+# Dependencies: 10
+# Priority: medium
+# Description: Implement modals for creating and editing tasks, including recurrence options.
+# Details:
+1. Create task creation modal:
+   - Form fields for all task properties
+   - Validation for required fields
+   - Category selection with visual indicators
+   - Time selection with validation
+   - Classroom selection dropdown
+2. Implement recurrence options:
+   - Toggle for one-off vs recurring
+   - Weekday selection for recurring tasks
+   - End date selection
+   - Preview of generated occurrences
+3. Create task edit modal:
+   - Pre-populated form with existing task data
+   - Warning about effects on future occurrences
+4. Implement form validation:
+   - Required fields
+   - Time constraints (end > start, within school hours)
+   - Valid recurrence pattern
+
+# Test Strategy:
+1. Test form validation with valid and invalid inputs
+2. Verify recurrence options generate correct preview
+3. Test task creation API integration
+4. Test task editing and its effect on future occurrences
+5. Verify modal opens and closes correctly
+6. Test keyboard accessibility

@@ -1,0 +1,25 @@
+# Task ID: 7
+# Title: Absence Management API Endpoints
+# Status: done
+# Dependencies: 2, 6
+# Priority: high
+# Description: Implement API endpoints for marking aides as absent and handling the reassignment of their tasks.
+# Details:
+1. Create RESTful endpoints for absences:
+   - POST /api/absences - Mark aide absent {aide_id, date, reason}
+   - DELETE /api/absences/<id> - Remove absence (re-link tasks if possible)
+   - GET /api/absences?week=YYYY-WW - List absences for timetable overlay
+2. Implement absence logic:
+   - When an absence is created, set all assignments for that aide and date to UNASSIGNED
+   - When an absence is deleted, attempt to restore released assignments if slots are still free
+3. Add unique constraint for (aide_id, date)
+4. Return appropriate HTTP status codes (409 for duplicate absences)
+5. Include released assignment IDs in the response
+
+# Test Strategy:
+1. Unit test each endpoint with valid and invalid data
+2. Test absence creation and its effect on assignments
+3. Test absence deletion and reassignment logic
+4. Verify unique constraint works
+5. Test edge cases (e.g., absence with no assignments, undo after reassignment)
+6. Test weekly filtering for absences

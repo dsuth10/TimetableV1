@@ -1,0 +1,26 @@
+# Task ID: 1
+# Title: Setup Project Structure and Dependencies
+# Status: pending
+# Dependencies: None
+# Priority: high
+# Description: Initialize the project repository with Flask backend and React frontend structure. Set up necessary dependencies and development environment.
+# Details:
+1. Create a new project repository
+2. Set up Flask backend structure:
+   - Create app.py as entry point
+   - Set up blueprints for API routes
+   - Configure SQLite database connection
+   - Install dependencies: Flask, Flask-RESTful, SQLAlchemy, dateutil
+3. Set up React frontend structure:
+   - Use Create React App or Vite
+   - Install dependencies: React, React Router, React DnD (for drag and drop), date-fns
+   - Set up folder structure (components, contexts, hooks, etc.)
+4. Configure build process to bundle frontend into a single HTML file
+5. Set up development environment with hot reloading
+6. Create README with setup instructions
+
+# Test Strategy:
+1. Verify all dependencies install correctly
+2. Ensure development server starts without errors
+3. Confirm backend and frontend can communicate
+4. Test that the application can run completely offline from a single HTML bundle and SQLite database file

@@ -1,0 +1,22 @@
+# Task ID: 8
+# Title: Classroom API Endpoints
+# Status: done
+# Dependencies: 2
+# Priority: medium
+# Description: Implement API endpoints for managing classrooms.
+# Details:
+1. Create RESTful endpoints for classrooms:
+   - GET /api/classrooms - List all classrooms
+   - POST /api/classrooms - Create a new classroom
+   - GET /api/classrooms/<id> - Get classroom details
+   - PUT /api/classrooms/<id> - Update classroom
+   - DELETE /api/classrooms/<id> - Delete classroom
+2. Include validation for all inputs
+3. Return appropriate HTTP status codes
+4. Format responses as JSON
+
+# Test Strategy:
+1. Unit test each endpoint with valid and invalid data
+2. Test CRUD operations for classrooms
+3. Verify validation rules are enforced
+4. Test error handling and status codes

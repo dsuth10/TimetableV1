@@ -1,0 +1,28 @@
+# Task ID: 6
+# Title: Assignment API Endpoints
+# Status: done
+# Dependencies: 2, 5
+# Priority: high
+# Description: Implement API endpoints for managing assignments, including collision detection and batch operations.
+# Details:
+1. Create RESTful endpoints for assignments:
+   - GET /api/assignments?week=YYYY-WW - Get weekly matrix for UI
+   - POST /api/assignments - Assign single occurrence
+   - POST /api/assignments/batch - Assign many (recurring)
+   - POST /api/assignments/check - Collision probe (dry-run)
+   - PATCH /api/assignments/<id> - Update status or reassign
+   - DELETE /api/assignments/<id> - Delete assignment
+2. Implement collision detection logic:
+   - Check if an aide is already assigned during the requested time
+   - Return 409 Conflict with details of the collision
+3. Implement batch assignment for recurring tasks
+4. Add filtering by week
+5. Return appropriate HTTP status codes
+
+# Test Strategy:
+1. Unit test each endpoint with valid and invalid data
+2. Test collision detection with various scenarios
+3. Test batch assignment with recurring patterns
+4. Verify weekly filtering works correctly
+5. Test status updates and reassignments
+6. Benchmark collision check performance to ensure it meets the <150ms requirement

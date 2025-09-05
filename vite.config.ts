@@ -15,6 +15,7 @@ export default defineConfig({
       '@/types': path.resolve(__dirname, './src/types'),
       '@/utils': path.resolve(__dirname, './src/utils'),
     },
+    dedupe: ['react', 'react-dom', '@emotion/react', '@emotion/styled'],
   },
   server: {
     proxy: {

@@ -1,0 +1,33 @@
+# Task ID: 11
+# Title: Timetable Grid Component
+# Status: in progress
+# Dependencies: 10
+# Priority: high
+# Description: Implement the main timetable grid component showing the weekly schedule for all aides.
+# Details:
+1. Create a responsive grid layout:
+   - Monday-Friday columns
+   - 30-minute time slots from 08:00-16:00
+   - Column per aide with colored header
+2. Implement time slot components:
+   - Empty slots with light outline
+   - Occupied slots showing task details
+   - Visual indication for different task categories
+3. Add hover effects:
+   - Tooltip with full task details
+   - Highlight on hover
+4. Implement absence overlay:
+   - Grey diagonal stripes for absent aides
+   - Tooltip showing absence reason
+5. Add accessibility features:
+   - ARIA labels
+   - Keyboard navigation
+   - High contrast mode
+
+# Test Strategy:
+1. Test rendering with various data sets
+2. Verify time slots display correctly
+3. Test hover effects and tooltips
+4. Verify absence overlay displays correctly
+5. Test accessibility features
+6. Ensure WCAG AA compliance for colors and contrast

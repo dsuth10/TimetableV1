@@ -90,6 +90,10 @@ export const assignmentsApi = {
   // Check for conflicts
   checkConflict: (data: ConflictCheckRequest) => 
     api.post<ConflictCheckResponse>('/assignments/check', data),
+
+  // Atomic replace endpoint
+  replace: (data: { conflicting_assignment_id: number; aide_id: number; date: string; start_time: string; end_time: string; task_id?: number; existing_assignment_id?: number; }) =>
+    api.post<{ assignment: Assignment; unassigned: Assignment }>('/assignments/replace', data),
   
   // Get assignments by aide
   getByAide: async (aideId: number, week?: string) => {

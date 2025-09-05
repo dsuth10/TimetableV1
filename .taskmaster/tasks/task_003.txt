@@ -1,0 +1,23 @@
+# Task ID: 3
+# Title: Seed Data Script
+# Status: pending
+# Dependencies: 2
+# Priority: medium
+# Description: Create a script to populate the database with initial seed data for testing and demonstration purposes.
+# Details:
+1. Create a seed.py script that populates the database with:
+   - At least 5 teacher aides with different qualifications and colors
+   - Standard availability patterns for each aide (Monday-Friday, 8:00-16:00)
+   - At least 3 classrooms with different capacities
+   - 5 demo tasks of different categories (PLAYGROUND, CLASS_SUPPORT, GROUP_SUPPORT, INDIVIDUAL_SUPPORT)
+   - Sample assignments for the current week
+   - One sample absence
+2. Ensure seed data covers all entity types and relationships
+3. Add command-line options to reset the database and re-seed
+4. Include realistic data that demonstrates all features (recurring tasks, conflicts, etc.)
+
+# Test Strategy:
+1. Run seed script and verify all data is correctly inserted
+2. Check relationships are properly established
+3. Verify seed data appears correctly in the application
+4. Test database reset functionality

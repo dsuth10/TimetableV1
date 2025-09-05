@@ -1,0 +1,291 @@
+{
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Setup Project Structure and Dependencies",
+      "description": "Initialize the project repository with Flask backend and React frontend structure. Set up necessary dependencies and development environment.",
+      "details": "1. Create a new project repository\n2. Set up Flask backend structure:\n   - Create app.py as entry point\n   - Set up blueprints for API routes\n   - Configure SQLite database connection\n   - Install dependencies: Flask, Flask-RESTful, SQLAlchemy, dateutil\n3. Set up React frontend structure:\n   - Use Create React App or Vite\n   - Install dependencies: React, React Router, React DnD (for drag and drop), date-fns\n   - Set up folder structure (components, contexts, hooks, etc.)\n4. Configure build process to bundle frontend into a single HTML file\n5. Set up development environment with hot reloading\n6. Create README with setup instructions",
+      "testStrategy": "1. Verify all dependencies install correctly\n2. Ensure development server starts without errors\n3. Confirm backend and frontend can communicate\n4. Test that the application can run completely offline from a single HTML bundle and SQLite database file",
+      "priority": "high",
+      "dependencies": [],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 2,
+      "title": "Database Schema and Migrations",
+      "description": "Design and implement the database schema for all entities as specified in the PRD. Set up migration system using Alembic.",
+      "details": "1. Create SQLAlchemy models for all entities:\n   - TeacherAide (id, name, qualifications, colour_hex)\n   - Availability (id, aide_id, weekday, start_time, end_time)\n   - Classroom (id, name, capacity, notes)\n   - Task (id, title, category, start_time, end_time, recurrence_rule, expires_on, classroom_id, notes, status)\n   - Assignment (id, task_id, aide_id, date, start_time, end_time, status)\n   - Absence (id, aide_id, date, reason, created_at)\n2. Define relationships between models:\n   - TeacherAide has many Availability, Assignment, Absence\n   - Task may belong to a Classroom\n   - Task has many Assignment\n   - Assignment links a Task to an aide\n3. Set up Alembic for database migrations\n4. Create initial migration script\n5. Add unique constraints:\n   - (aide_id, date) for Absence\n   - Ensure assignments cannot overlap for a single aide\n6. Implement database initialization script",
+      "testStrategy": "1. Run migrations to verify schema creation\n2. Test model relationships with sample data\n3. Verify constraints work as expected (e.g., cannot create duplicate absences)\n4. Test database rollback and migration versioning",
+      "priority": "high",
+      "dependencies": [
+        1
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 3,
+      "title": "Seed Data Script",
+      "description": "Create a script to populate the database with initial seed data for testing and demonstration purposes.",
+      "details": "1. Create a seed.py script that populates the database with:\n   - At least 5 teacher aides with different qualifications and colors\n   - Standard availability patterns for each aide (Monday-Friday, 8:00-16:00)\n   - At least 3 classrooms with different capacities\n   - 5 demo tasks of different categories (PLAYGROUND, CLASS_SUPPORT, GROUP_SUPPORT, INDIVIDUAL_SUPPORT)\n   - Sample assignments for the current week\n   - One sample absence\n2. Ensure seed data covers all entity types and relationships\n3. Add command-line options to reset the database and re-seed\n4. Include realistic data that demonstrates all features (recurring tasks, conflicts, etc.)",
+      "testStrategy": "1. Run seed script and verify all data is correctly inserted\n2. Check relationships are properly established\n3. Verify seed data appears correctly in the application\n4. Test database reset functionality",
+      "priority": "medium",
+      "dependencies": [
+        2
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 4,
+      "title": "Teacher Aide API Endpoints",
+      "description": "Implement API endpoints for managing teacher aides and their availability.",
+      "details": "1. Create RESTful endpoints for teacher aides:\n   - GET /api/teacher-aides - List all aides\n   - POST /api/teacher-aides - Create a new aide\n   - GET /api/teacher-aides/<id> - Get aide details\n   - PUT /api/teacher-aides/<id> - Update aide\n   - DELETE /api/teacher-aides/<id> - Delete aide\n2. Implement availability management:\n   - GET /api/teacher-aides/<id>/availability - Get aide's availability\n   - POST /api/teacher-aides/<id>/availability - Add availability\n   - PUT /api/teacher-aides/<id>/availability/<id> - Update availability\n   - DELETE /api/teacher-aides/<id>/availability/<id> - Delete availability\n3. Include validation for all inputs\n4. Return appropriate HTTP status codes for success/failure\n5. Format responses as JSON",
+      "testStrategy": "1. Unit test each endpoint with valid and invalid data\n2. Test CRUD operations for teacher aides and availability\n3. Verify validation rules are enforced\n4. Test error handling and status codes\n5. Benchmark response times to ensure they meet the <150ms requirement",
+      "priority": "high",
+      "dependencies": [
+        2
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 5,
+      "title": "Task Management API Endpoints",
+      "description": "Implement API endpoints for creating, retrieving, updating, and deleting tasks.",
+      "details": "1. Create RESTful endpoints for tasks:\n   - GET /api/tasks - List tasks with optional filters (status, date, category)\n   - POST /api/tasks - Create one-off task\n   - POST /api/recurring-tasks - Create recurring task with RRULE\n   - GET /api/tasks/<id> - Get task details\n   - PUT /api/tasks/<id> - Update task\n   - DELETE /api/tasks/<id> - Delete task and future occurrences\n2. Implement recurrence logic using dateutil.rrule:\n   - Parse iCal RRULE format\n   - Generate assignment shells for the next 4 weeks (configurable)\n   - Handle expiration dates\n3. Include validation for all inputs\n4. Implement filtering by status, date, and category\n5. Return appropriate HTTP status codes",
+      "testStrategy": "1. Unit test each endpoint with valid and invalid data\n2. Test recurrence rule parsing and generation\n3. Verify filters work correctly\n4. Test task creation, updating, and deletion\n5. Verify cascading effects on assignments\n6. Test edge cases like invalid recurrence rules",
+      "priority": "high",
+      "dependencies": [
+        2
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 6,
+      "title": "Assignment API Endpoints",
+      "description": "Implement API endpoints for managing assignments, including collision detection and batch operations.",
+      "details": "1. Create RESTful endpoints for assignments:\n   - GET /api/assignments?week=YYYY-WW - Get weekly matrix for UI\n   - POST /api/assignments - Assign single occurrence\n   - POST /api/assignments/batch - Assign many (recurring)\n   - POST /api/assignments/check - Collision probe (dry-run)\n   - PATCH /api/assignments/<id> - Update status or reassign\n   - DELETE /api/assignments/<id> - Delete assignment\n2. Implement collision detection logic:\n   - Check if an aide is already assigned during the requested time\n   - Return 409 Conflict with details of the collision\n3. Implement batch assignment for recurring tasks\n4. Add filtering by week\n5. Return appropriate HTTP status codes",
+      "testStrategy": "1. Unit test each endpoint with valid and invalid data\n2. Test collision detection with various scenarios\n3. Test batch assignment with recurring patterns\n4. Verify weekly filtering works correctly\n5. Test status updates and reassignments\n6. Benchmark collision check performance to ensure it meets the <150ms requirement",
+      "priority": "high",
+      "dependencies": [
+        2,
+        5
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 7,
+      "title": "Absence Management API Endpoints",
+      "description": "Implement API endpoints for marking aides as absent and handling the reassignment of their tasks.",
+      "details": "1. Create RESTful endpoints for absences:\n   - POST /api/absences - Mark aide absent {aide_id, date, reason}\n   - DELETE /api/absences/<id> - Remove absence (re-link tasks if possible)\n   - GET /api/absences?week=YYYY-WW - List absences for timetable overlay\n2. Implement absence logic:\n   - When an absence is created, set all assignments for that aide and date to UNASSIGNED\n   - When an absence is deleted, attempt to restore released assignments if slots are still free\n3. Add unique constraint for (aide_id, date)\n4. Return appropriate HTTP status codes (409 for duplicate absences)\n5. Include released assignment IDs in the response",
+      "testStrategy": "1. Unit test each endpoint with valid and invalid data\n2. Test absence creation and its effect on assignments\n3. Test absence deletion and reassignment logic\n4. Verify unique constraint works\n5. Test edge cases (e.g., absence with no assignments, undo after reassignment)\n6. Test weekly filtering for absences",
+      "priority": "high",
+      "dependencies": [
+        2,
+        6
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 8,
+      "title": "Classroom API Endpoints",
+      "description": "Implement API endpoints for managing classrooms.",
+      "details": "1. Create RESTful endpoints for classrooms:\n   - GET /api/classrooms - List all classrooms\n   - POST /api/classrooms - Create a new classroom\n   - GET /api/classrooms/<id> - Get classroom details\n   - PUT /api/classrooms/<id> - Update classroom\n   - DELETE /api/classrooms/<id> - Delete classroom\n2. Include validation for all inputs\n3. Return appropriate HTTP status codes\n4. Format responses as JSON",
+      "testStrategy": "1. Unit test each endpoint with valid and invalid data\n2. Test CRUD operations for classrooms\n3. Verify validation rules are enforced\n4. Test error handling and status codes",
+      "priority": "medium",
+      "dependencies": [
+        2
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 9,
+      "title": "Recurrence Engine Implementation",
+      "description": "Implement the recurrence engine for generating assignment shells from recurring tasks.",
+      "details": "1. Implement recurrence engine using dateutil.rrule:\n   - Parse iCal RRULE format (e.g., FREQ=WEEKLY;BYDAY=MO,WE,FR)\n   - Generate dates based on the rule and expiration date\n   - Create assignment shells for the next 4 weeks (configurable to full 10-week term)\n2. Create a function to extend the assignment horizon:\n   - Identify recurring tasks that need more future assignments\n   - Generate additional assignments up to the configured horizon\n3. Implement a scheduled task or endpoint to trigger horizon extension\n4. Handle modifications to recurring tasks:\n   - Update future unstarted assignments when task details change\n   - Keep historical assignments unchanged",
+      "testStrategy": "1. Unit test RRULE parsing with various patterns\n2. Test assignment shell generation for different recurrence patterns\n3. Test horizon extension logic\n4. Verify modifications to recurring tasks update future assignments correctly\n5. Test edge cases like tasks with immediate expiration",
+      "priority": "high",
+      "dependencies": [
+        5,
+        6
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 10,
+      "title": "Frontend React Setup and Routing",
+      "description": "Set up the React frontend with routing and global state management.",
+      "details": "1. Set up React Router with routes for:\n   - Main schedule page\n   - Aide management\n   - Task management\n   - Settings\n2. Implement global state management using Context API or Redux:\n   - Store for aides, tasks, assignments, absences\n   - Loading and error states\n3. Create API service layer for communicating with the backend\n4. Implement authentication placeholder (for future enhancement)\n5. Set up layout components:\n   - Header with navigation\n   - Main content area\n   - Modals container",
+      "testStrategy": "1. Test routing between different pages\n2. Verify global state updates correctly\n3. Test API service layer with mock data\n4. Ensure components receive and display state correctly\n5. Test responsive layout on desktop screens",
+      "priority": "high",
+      "dependencies": [
+        1
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 11,
+      "title": "Timetable Grid Component",
+      "description": "Implement the main timetable grid component showing the weekly schedule for all aides.",
+      "details": "1. Create a responsive grid layout:\n   - Monday-Friday columns\n   - 30-minute time slots from 08:00-16:00\n   - Column per aide with colored header\n2. Implement time slot components:\n   - Empty slots with light outline\n   - Occupied slots showing task details\n   - Visual indication for different task categories\n3. Add hover effects:\n   - Tooltip with full task details\n   - Highlight on hover\n4. Implement absence overlay:\n   - Grey diagonal stripes for absent aides\n   - Tooltip showing absence reason\n5. Add accessibility features:\n   - ARIA labels\n   - Keyboard navigation\n   - High contrast mode",
+      "testStrategy": "1. Test rendering with various data sets\n2. Verify time slots display correctly\n3. Test hover effects and tooltips\n4. Verify absence overlay displays correctly\n5. Test accessibility features\n6. Ensure WCAG AA compliance for colors and contrast",
+      "priority": "high",
+      "dependencies": [
+        10
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 12,
+      "title": "Unassigned Task List Component",
+      "description": "Implement the unassigned task list component for displaying and filtering tasks awaiting assignment.",
+      "details": "1. Create a scrollable list component:\n   - Sticky header per weekday\n   - Search box for filtering by title\n   - Category filters\n2. Implement task card components:\n   - Show title, time, category\n   - Visual indication for different categories\n   - Hover effects with full details\n3. Add sorting options:\n   - By time\n   - By category\n   - By priority\n4. Implement keyboard shortcuts for navigation\n5. Add empty state for when no tasks are unassigned",
+      "testStrategy": "1. Test rendering with various data sets\n2. Verify filtering and sorting work correctly\n3. Test search functionality\n4. Verify keyboard shortcuts work\n5. Test accessibility features\n6. Ensure WCAG AA compliance for colors and contrast",
+      "priority": "high",
+      "dependencies": [
+        10
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 13,
+      "title": "Drag and Drop Implementation",
+      "description": "Implement drag and drop functionality for assigning tasks to aides and handling conflicts.",
+      "details": "1. Set up React DnD library:\n   - Define drag sources (task cards)\n   - Define drop targets (timetable slots)\n2. Implement drag behavior:\n   - Visual feedback during drag\n   - Validation of drop targets\n   - Rejection animation for invalid drops\n3. Implement drop handling:\n   - Call assignment API on successful drop\n   - Handle API responses\n   - Show error messages for failures\n4. Implement conflict detection:\n   - Call collision check API before finalizing drop\n   - Show conflict modal if collision detected\n5. Implement drag between aides:\n   - Allow reassigning tasks by dragging between aide columns\n   - Apply same conflict rules",
+      "testStrategy": "1. Test dragging tasks from unassigned list to timetable\n2. Test dragging tasks between aides\n3. Verify conflict detection works correctly\n4. Test invalid drops (e.g., onto absent aide)\n5. Verify visual feedback during drag operations\n6. Test keyboard accessibility for drag and drop",
+      "priority": "high",
+      "dependencies": [
+        11,
+        12
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 14,
+      "title": "Task Creation and Edit Modals",
+      "description": "Implement modals for creating and editing tasks, including recurrence options.",
+      "details": "1. Create task creation modal:\n   - Form fields for all task properties\n   - Validation for required fields\n   - Category selection with visual indicators\n   - Time selection with validation\n   - Classroom selection dropdown\n2. Implement recurrence options:\n   - Toggle for one-off vs recurring\n   - Weekday selection for recurring tasks\n   - End date selection\n   - Preview of generated occurrences\n3. Create task edit modal:\n   - Pre-populated form with existing task data\n   - Warning about effects on future occurrences\n4. Implement form validation:\n   - Required fields\n   - Time constraints (end > start, within school hours)\n   - Valid recurrence pattern",
+      "testStrategy": "1. Test form validation with valid and invalid inputs\n2. Verify recurrence options generate correct preview\n3. Test task creation API integration\n4. Test task editing and its effect on future occurrences\n5. Verify modal opens and closes correctly\n6. Test keyboard accessibility",
+      "priority": "medium",
+      "dependencies": [
+        10
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 15,
+      "title": "Conflict Resolution Modal",
+      "description": "Implement the conflict resolution modal for handling assignment conflicts.",
+      "details": "1. Create conflict modal component:\n   - Display details of current assignment\n   - Display details of new assignment\n   - Options: Replace or Cancel\n2. Implement replace action:\n   - Set current assignment to UNASSIGNED\n   - Assign new task to the slot\n   - Update UI to reflect changes\n3. Implement cancel action:\n   - Close modal without changes\n   - Return task to original position\n4. Add visual comparison between conflicting tasks\n5. Include keyboard shortcuts for quick resolution",
+      "testStrategy": "1. Test modal appears correctly when conflict detected\n2. Verify replace action works as expected\n3. Test cancel action\n4. Verify UI updates correctly after resolution\n5. Test keyboard shortcuts\n6. Test accessibility features",
+      "priority": "high",
+      "dependencies": [
+        13
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 16,
+      "title": "Absence Management UI",
+      "description": "Implement UI components for marking aides as absent and visualizing absences.",
+      "details": "1. Create absence modal component:\n   - Aide selection dropdown\n   - Date picker\n   - Optional reason field\n   - Submit and cancel buttons\n2. Implement absence visualization:\n   - Grey diagonal stripes overlay on timetable\n   - Tooltip showing absence reason\n   - Visual indicator in aide list\n3. Implement absence deletion:\n   - Button to remove absence\n   - Confirmation dialog\n   - Feedback on reassignment success/failure\n4. Add validation:\n   - Prevent duplicate absences\n   - Date validation",
+      "testStrategy": "1. Test absence modal with valid and invalid inputs\n2. Verify absence visualization appears correctly\n3. Test absence deletion and reassignment\n4. Verify validation prevents duplicates\n5. Test API integration\n6. Test accessibility features",
+      "priority": "medium",
+      "dependencies": [
+        11
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 17,
+      "title": "Status Tracking for Aides",
+      "description": "Implement functionality for aides to update the status of their assignments.",
+      "details": "1. Implement status toggle on assignment cards:\n   - Click to cycle through statuses (ASSIGNED → IN_PROGRESS → COMPLETE)\n   - Visual indicators for each status\n   - Animation for status changes\n2. Add API integration:\n   - Call PATCH /api/assignments/<id> with new status\n   - Handle success/failure responses\n3. Implement completed task styling:\n   - Strike-through title\n   - Fade color\n4. Add aide-specific view:\n   - Filter timetable to show only current aide's assignments\n   - Simplified interface focused on status updates",
+      "testStrategy": "1. Test status toggle UI\n2. Verify API calls are made correctly\n3. Test visual indicators for different statuses\n4. Verify completed task styling\n5. Test aide-specific view\n6. Test accessibility features",
+      "priority": "medium",
+      "dependencies": [
+        11
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 18,
+      "title": "Teacher Request Form",
+      "description": "Implement a simplified form for teachers to submit support requests.",
+      "details": "1. Create teacher request form:\n   - Fields for title, category, date, times, notes\n   - Classroom selection\n   - Validation for required fields\n   - Submit button\n2. Implement API integration:\n   - Submit form data to create an UNASSIGNED task\n   - Handle success/failure responses\n3. Add confirmation message:\n   - Show success message with request details\n   - Option to submit another request\n4. Implement form validation:\n   - Required fields\n   - Time constraints\n   - Valid date",
+      "testStrategy": "1. Test form with valid and invalid inputs\n2. Verify API integration works correctly\n3. Test confirmation message\n4. Verify validation rules are enforced\n5. Test accessibility features",
+      "priority": "low",
+      "dependencies": [
+        10
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 19,
+      "title": "Accessibility and Visual Polish",
+      "description": "Ensure the application meets accessibility standards and has a polished visual appearance.",
+      "details": "1. Implement WCAG AA compliant color palette:\n   - Ensure sufficient contrast ratios\n   - Color-blind safe palette\n   - Visual indicators beyond color\n2. Add keyboard shortcuts:\n   - Navigation between components\n   - Common actions (create task, mark absent, etc.)\n   - Focus management\n3. Implement ARIA attributes:\n   - Labels for all interactive elements\n   - Role attributes\n   - State indicators\n4. Add tooltips for all icons and interactive elements\n5. Implement visual polish:\n   - Consistent spacing and alignment\n   - Animations and transitions\n   - Loading states\n   - Error messages",
+      "testStrategy": "1. Test with screen readers\n2. Verify keyboard navigation works\n3. Test color contrast with accessibility tools\n4. Verify tooltips appear correctly\n5. Test with color blindness simulators\n6. Conduct user testing with accessibility focus",
+      "priority": "medium",
+      "dependencies": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18
+      ],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 20,
+      "title": "Offline Functionality and Packaging",
+      "description": "Ensure the application can run completely offline and package it for distribution.",
+      "details": "1. Implement offline storage:\n   - Configure SQLite for local storage\n   - Set up database file creation and initialization\n2. Create build process:\n   - Bundle frontend into a single HTML file\n   - Package backend with dependencies\n   - Create executable or installer\n3. Implement data persistence:\n   - Save changes to local database\n   - Handle database errors\n4. Add backup functionality:\n   - Export database to file\n   - Import from backup\n5. Create documentation:\n   - Installation instructions\n   - User guide\n   - Troubleshooting",
+      "testStrategy": "1. Test application without internet connection\n2. Verify all features work offline\n3. Test database persistence across restarts\n4. Verify build process creates correct artifacts\n5. Test installation on fresh system\n6. Test backup and restore functionality",
+      "priority": "medium",
+      "dependencies": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "status": "pending",
+      "subtasks": []
+    }
+  ]
+}
