@@ -87,10 +87,24 @@ describe('Schedule', () => {
   });
 
   it('should allow dragging an unassigned task to a time slot', () => {
-    // Proceed once network stubs have resolved; DOM will hydrate shortly after
-
+    // Ensure the test harness in the app is ready before invoking helpers
+    cy.window({ timeout: 20000 }).should((win: any) => {
+      expect(!!win.__harnessReady, 'harness ready flag').to.eq(true);
+    });
+    // Ensure assignments have been set in the app before triggering the move
+    cy.window({ timeout: 20000 })
+      .its('__assignments')
+      .should((assignments: any[]) => {
+        expect(Array.isArray(assignments), 'assignments array ready').to.eq(true);
+        const exists = assignments.some((x: any) => x?.id === 1);
+        expect(exists, 'assignment id 1 present').to.eq(true);
+      });
     // Dispatch the custom event harness to invoke onDragEnd path
-    cy.window({ timeout: 15000 }).then((win: any) => {
+    cy.window({ timeout: 20000 }).then((win: any) => {
+      const helper = win.__assignToSlot || win.__triggerDrop;
+      if (typeof helper === 'function') {
+        return helper(1, '1-Monday-08:00');
+      }
       const detail = {
         draggableId: 'assignment-1',
         source: { droppableId: 'unassigned', index: 0 },
@@ -100,6 +114,8 @@ describe('Schedule', () => {
       };
       win.dispatchEvent(new CustomEvent('test-drop', { detail }));
     });
+    // Wait for the PUT update to complete so state propagates
+    cy.wait('@updateAssignment');
     // Assert via exposed window assignments (optimistic update)
     cy.window({ timeout: 15000 })
       .its('__assignments')

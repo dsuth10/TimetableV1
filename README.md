@@ -283,6 +283,14 @@ Open Cypress GUI:
 npx cypress open
 ```
 
+One-command headless run (starts preview and runs the schedule spec):
+
+```bash
+npm run e2e:headless
+```
+
+This uses `preview:ci` on `http://127.0.0.1:5173` and runs Cypress headlessly with the built-in harness helpers (`window.__assignToSlot` / `window.__triggerDrop`).
+
 Notes:
 - Intercepts use globs (e.g., `/api/assignments**`) so they match optional query strings.
 - Custom drag helpers are available (see `cypress/support/commands.js`). For headless stability with `@hello-pangea/dnd`, prefer a test harness approach:
@@ -308,6 +316,22 @@ Notes:
 - @hello-pangea/dnd may not respond to basic mouse/drag events in headless runs. Use a robust
   helper that simulates pointer events with consistent coordinates and dataTransfer, or use the
   E2E-only test harness described above. The harness is preferred for CI stability.
+
+### Linear MCP (Automation)
+
+We use the Linear MCP integration to triage and manage work directly from the IDE:
+
+- Fetch teams, issues, cycles, labels
+- Create projects/cycles and move issues
+- Update issue states (Todo/In Progress/Done)
+
+Typical workflows used in this repo:
+
+- Create project "QA Hardening (Sep 2025)", add JOS-37, JOS-10, JOS-38, JOS-27
+- Set JOS-38 and JOS-27 to Todo; keep JOS-37/JOS-10 In Progress
+- Reconcile completed items (e.g., mark JOS-29/JOS-30 Done)
+
+See `docs/linear-mcp.md` for setup and example commands.
 
 ## Frontend Architecture
 

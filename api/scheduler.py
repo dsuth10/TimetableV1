@@ -2,7 +2,7 @@
 
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Optional
 from sqlalchemy.orm import Session
 
@@ -86,3 +86,27 @@ def get_scheduler_status() -> dict:
         'horizon_extension_interval': scheduler.horizon_extension_interval,
         'last_run': datetime.now().isoformat() if scheduler.running else None
     }
+
+
+# Compatibility wrapper used by task routes/tests
+def generate_assignments_for_task(task, session, horizon_weeks: int = DEFAULT_HORIZON_WEEKS):
+    """Generate assignments for a given task across the default horizon.
+
+    This provides a stable import path for routes and tests expecting
+    ``api.scheduler.generate_assignments_for_task``.
+    """
+    # Import locally to avoid any potential circular imports at module load
+    from api.recurrence import generate_assignments
+
+    start_date: date = date.today()
+    end_date: date = start_date + timedelta(weeks=horizon_weeks)
+    # Respect task expiry if set
+    if getattr(task, 'expires_on', None):
+        try:
+            if task.expires_on < end_date:
+                end_date = task.expires_on
+        except Exception:
+            # If expires_on is not comparable (unexpected type), ignore
+            pass
+
+    return generate_assignments(task, start_date, end_date, session)
