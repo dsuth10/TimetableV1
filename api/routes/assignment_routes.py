@@ -27,6 +27,29 @@ class AssignmentListResource(Resource):
             status = request.args.get('status')
             start_date = request.args.get('start_date')
             end_date = request.args.get('end_date')
+            week = request.args.get('week')
+
+            # Weekly simplified view when week is provided (YYYY-WW)
+            if week:
+                try:
+                    year, week_num = map(int, week.split('-W'))
+                    week_start = date.fromisocalendar(year, week_num, 1)
+                    week_end = date.fromisocalendar(year, week_num, 7)
+                except (ValueError, IndexError):
+                    return error_response('VALIDATION_ERROR', 'Invalid week format. Use YYYY-WW', 422)
+
+                assignments = session.query(Assignment).options(
+                    joinedload(Assignment.task),
+                    joinedload(Assignment.aide)
+                ).filter(
+                    Assignment.date.between(week_start, week_end)
+                ).order_by(Assignment.date.asc()).all()
+
+                tasks_map = {t.id: t for t in session.query(Task).all()}
+                return {
+                    'assignments': [serialize_assignment(a, tasks_map.get(a.task_id)) for a in assignments],
+                    'total': len(assignments)
+                }, 200
             
             # Build query
             query = session.query(Assignment)
@@ -339,23 +362,36 @@ class AssignmentBatchResource(Resource):
         try:
             data = request.get_json(force=True)
             
-            # Validate required fields
-            required_fields = ['assignments']
-            for field in required_fields:
-                if field not in data:
-                    return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
-            
-            # Validate assignments array
-            if not isinstance(data['assignments'], list):
-                return error_response('VALIDATION_ERROR', 'assignments must be an array', 422)
-            
+            # Support both expanded and condensed payloads
             created_assignments = []
             errors = []
-            
-            for idx, assignment_data in enumerate(data['assignments']):
+            if 'assignments' in data:
+                if not isinstance(data['assignments'], list):
+                    return error_response('VALIDATION_ERROR', 'assignments must be an array', 422)
+                iterable = enumerate(data['assignments'])
+                condensed = False
+            else:
+                condensed_required = ['task_id', 'dates', 'start_time', 'end_time']
+                for field in condensed_required:
+                    if field not in data:
+                        return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
+                if not isinstance(data['dates'], list):
+                    return error_response('VALIDATION_ERROR', 'dates must be an array', 422)
+                iterable = enumerate([
+                    {
+                        'task_id': data['task_id'],
+                        'aide_id': data.get('aide_id'),
+                        'date': d,
+                        'start_time': data['start_time'],
+                        'end_time': data['end_time'],
+                    } for d in data['dates']
+                ])
+                condensed = True
+
+            for idx, assignment_data in iterable:
                 try:
                     # Validate required fields
-                    required_fields = ['task_id', 'aide_id', 'date', 'start_time', 'end_time']
+                    required_fields = ['task_id', 'date', 'start_time', 'end_time']
                     for field in required_fields:
                         if field not in assignment_data:
                             errors.append({
@@ -374,13 +410,15 @@ class AssignmentBatchResource(Resource):
                         continue
                     
                     # Validate aide exists
-                    aide = session.query(TeacherAide).get(assignment_data['aide_id'])
-                    if not aide:
-                        errors.append({
-                            'index': idx,
-                            'error': f'Teacher aide {assignment_data["aide_id"]} not found'
-                        })
-                        continue
+                    aide = None
+                    if 'aide_id' in assignment_data and assignment_data['aide_id'] is not None:
+                        aide = session.query(TeacherAide).get(assignment_data['aide_id'])
+                        if not aide:
+                            errors.append({
+                                'index': idx,
+                                'error': f'Teacher aide {assignment_data["aide_id"]} not found'
+                            })
+                            continue
                     
                     # Validate date format
                     try:
@@ -435,64 +473,67 @@ class AssignmentBatchResource(Resource):
                         continue
 
                     # Check for scheduling conflicts for the aide on the same date (overlapping times)
-                    conflict = session.query(Assignment).options(
-                        joinedload(Assignment.task),
-                        joinedload(Assignment.aide)
-                    ).filter(
-                        Assignment.aide_id == aide.id,
-                        Assignment.date == date_value,
-                        or_(
-                            and_(Assignment.start_time <= start_time, start_time < Assignment.end_time),
-                            and_(Assignment.start_time < end_time, end_time <= Assignment.end_time),
-                            and_(start_time <= Assignment.start_time, Assignment.start_time < end_time)
-                        )
-                    ).first()
-                    if conflict:
-                        errors.append({
-                            'index': idx,
-                            'error': 'Teacher aide has a scheduling conflict'
-                        })
-                        continue
-
-                    # Validate absence overlap (treat absence as full-day)
-                    absence = session.query(Absence).filter(
-                        Absence.aide_id == aide.id,
-                        Absence.start_date <= date_value,
-                        Absence.end_date >= date_value
-                    ).first()
-                    if absence:
-                        errors.append({
-                            'index': idx,
-                            'error': 'Aide is absent on the selected date'
-                        })
-                        continue
-
-                    # Validate availability window if records exist for that weekday
-                    weekday = calendar.day_name[date_value.weekday()][:2].upper()
-                    availability_windows = session.query(Availability).filter_by(
-                        aide_id=aide.id,
-                        weekday=weekday
-                    ).all()
-                    if availability_windows:
-                        fits_any = any(
-                            (window.start_time <= start_time and end_time <= window.end_time)
-                            for window in availability_windows
-                        )
-                        if not fits_any:
+                    if aide is not None:
+                        conflict = session.query(Assignment).options(
+                            joinedload(Assignment.task),
+                            joinedload(Assignment.aide)
+                        ).filter(
+                            Assignment.aide_id == aide.id,
+                            Assignment.date == date_value,
+                            or_(
+                                and_(Assignment.start_time <= start_time, start_time < Assignment.end_time),
+                                and_(Assignment.start_time < end_time, end_time <= Assignment.end_time),
+                                and_(start_time <= Assignment.start_time, Assignment.start_time < end_time)
+                            )
+                        ).first()
+                        if conflict:
                             errors.append({
                                 'index': idx,
-                                'error': 'Requested time is outside aide availability'
+                                'error': 'Teacher aide has a scheduling conflict'
                             })
                             continue
+
+                    # Validate absence overlap (treat absence as full-day)
+                    if aide is not None:
+                        absence = session.query(Absence).filter(
+                            Absence.aide_id == aide.id,
+                            Absence.start_date <= date_value,
+                            Absence.end_date >= date_value
+                        ).first()
+                        if absence:
+                            errors.append({
+                                'index': idx,
+                                'error': 'Aide is absent on the selected date'
+                            })
+                            continue
+
+                    # Validate availability window if records exist for that weekday
+                    if aide is not None:
+                        weekday = calendar.day_name[date_value.weekday()][:2].upper()
+                        availability_windows = session.query(Availability).filter_by(
+                            aide_id=aide.id,
+                            weekday=weekday
+                        ).all()
+                        if availability_windows:
+                            fits_any = any(
+                                (window.start_time <= start_time and end_time <= window.end_time)
+                                for window in availability_windows
+                            )
+                            if not fits_any:
+                                errors.append({
+                                    'index': idx,
+                                    'error': 'Requested time is outside aide availability'
+                                })
+                                continue
                     
                     # Create assignment
                     assignment = Assignment(
                         task_id=assignment_data['task_id'],
-                        aide_id=assignment_data['aide_id'],
+                        aide_id=assignment_data.get('aide_id'),
                         date=date_value,
                         start_time=start_time,
                         end_time=end_time,
-                        status='ASSIGNED'
+                        status='ASSIGNED' if assignment_data.get('aide_id') is not None else 'UNASSIGNED'
                     )
                     
                     session.add(assignment)
@@ -506,19 +547,20 @@ class AssignmentBatchResource(Resource):
             
             if created_assignments:
                 session.commit()
-                
-                # Get tasks for serialization
                 tasks_map = {t.id: t for t in session.query(Task).all()}
-                
-                return {
-                    'created': [serialize_assignment(a, tasks_map.get(a.task_id)) for a in created_assignments],
-                    'errors': errors
-                }, 201
+                if condensed:
+                    return {
+                        'assignments': [serialize_assignment(a, tasks_map.get(a.task_id)) for a in created_assignments]
+                    }, 201
+                else:
+                    return {
+                        'created': [serialize_assignment(a, tasks_map.get(a.task_id)) for a in created_assignments],
+                        'errors': errors
+                    }, 201
             else:
-                return {
-                    'created': [],
-                    'errors': errors
-                }, 422
+                if condensed:
+                    return { 'assignments': [] }, 422
+                return { 'created': [], 'errors': errors }, 422
                 
         except Exception as e:
             session.rollback()
@@ -536,9 +578,9 @@ class AssignmentCheckResource(Resource):
                 if field not in data:
                     return error_response('VALIDATION_ERROR', f'Missing required field: {field}', 422)
             
-            # Validate date format
+            # Validate date format (date-only expected)
             try:
-                check_date = datetime.fromisoformat(data['date'])
+                check_date = date.fromisoformat(data['date'])
             except ValueError:
                 return error_response('VALIDATION_ERROR', 'Invalid date format. Use YYYY-MM-DD', 422)
 
@@ -575,8 +617,8 @@ class AssignmentCheckResource(Resource):
             # Check for absences
             absences = session.query(Absence).filter(
                 Absence.aide_id == data['aide_id'],
-                Absence.start_date <= check_date.date(),
-                Absence.end_date >= check_date.date()
+                Absence.start_date <= check_date,
+                Absence.end_date >= check_date
             ).all()
             
             # Get aide's availability for the day
